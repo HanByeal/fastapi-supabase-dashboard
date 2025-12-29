@@ -1,37 +1,35 @@
 import os
 import re
 from typing import Any, Dict, List, Optional
-from fastapi.responses import RedirectResponse
+
 import httpx
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 
-if os.getenv("RENDER") is None:   # Render 환경이 아니면(=로컬이면) .env 로드
-    load_dotenv()
-
+load_dotenv()
 
 SUPABASE_URL = (os.getenv("SUPABASE_URL") or "").rstrip("/")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY") or ""
 
-app = FastAPI(title="FastAPI + Supabase Dashboard")
+app = FastAPI(title="FastAPI + Supabase Dashboard (Single DB)")
 
 TABLES = {
     "trend": "trend",
     "party_domain_metrics": "party_domain_metrics",
-    "law_reform_gpt": "law_reform_gpt",
-    # ✅ DB 스크린샷 기준: law_reform_state 가 맞습니다.
-    "law_reform_state": "law_reform_state",
     "text_recap": "text_recap",
     "people_recap": "people_recap",
     "data_request_recap": "data_request_recap",
-    # 필요하면 나중에 사용
-    "questions": "questions",
+
+    # ✅ Law + Questions (DB 통합본)
+    "law_reform_stats_policy_rows": "law_reform_stats_policy_rows",
+    "law_reform_stats_session_rows": "law_reform_stats_session_rows",
+    "question_stats_session_rows": "question_stats_session_rows",
 }
+
 
 def _headers() -> Dict[str, str]:
     if not SUPABASE_URL or not SUPABASE_KEY:
-        # run.cmd로 실행하면 들어옵니다.
         return {}
     return {
         "apikey": SUPABASE_KEY,
@@ -39,9 +37,13 @@ def _headers() -> Dict[str, str]:
         "Accept": "application/json",
     }
 
+
 async def sb_select(table: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
     if not SUPABASE_URL or not SUPABASE_KEY:
-        raise HTTPException(status_code=500, detail="SUPABASE_URL / SUPABASE_KEY 가 설정되지 않았습니다. run.cmd로 실행하세요.")
+        raise HTTPException(
+            status_code=500,
+            detail="SUPABASE_URL / SUPABASE_KEY 가 설정되지 않았습니다. (.env 또는 run.cmd 확인)",
+        )
     url = f"{SUPABASE_URL}/rest/v1/{table}"
     async with httpx.AsyncClient(timeout=30.0) as client:
         r = await client.get(url, headers=_headers(), params=params)
@@ -49,8 +51,10 @@ async def sb_select(table: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
         raise HTTPException(status_code=r.status_code, detail=r.text)
     return r.json()
 
+
 def session_label(n: int) -> str:
     return f"{n}회"
+
 
 def parse_session_no(s: str) -> Optional[int]:
     if not s:
@@ -58,51 +62,22 @@ def parse_session_no(s: str) -> Optional[int]:
     m = re.search(r"(\d+)", str(s))
     return int(m.group(1)) if m else None
 
-# -------------------------
-# API (좌상단)
-# -------------------------
 
-@app.get("/")
-async def root():
-    return RedirectResponse(url="/dashboard")
-
-@app.get("/api/questions")
-async def api_questions(limit: int = 5000, offset: int = 0):
-    return await sb_select(TABLES["questions"], {"select": "*", "limit": limit, "offset": offset})
-
-
+# =========================
+# API (DB1)
+# =========================
 @app.get("/api/trend")
 async def api_trend(limit: int = 5000, offset: int = 0):
     return await sb_select(TABLES["trend"], {"select": "*", "limit": limit, "offset": offset})
+
 
 @app.get("/api/party-domain-metrics")
 async def api_party_domain_metrics(limit: int = 5000, offset: int = 0):
     return await sb_select(TABLES["party_domain_metrics"], {"select": "*", "limit": limit, "offset": offset})
 
-# ✅ 레거시 경로(사용자 테스트용): /trend 로도 뜨게
-@app.get("/trend")
-async def trend_alias(limit: int = 5000, offset: int = 0):
-    return await api_trend(limit=limit, offset=offset)
 
-# -------------------------
-# API (우측: law)
-# -------------------------
-@app.get("/api/law/state")
-async def api_law_state(limit: int = 5000, offset: int = 0):
-    # year, quarter, party, num_law_reform_requests 등
-    return await sb_select(TABLES["law_reform_state"], {"select": "*", "limit": limit, "offset": offset})
-
-@app.get("/api/law/gpt")
-async def api_law_gpt(limit: int = 5000, offset: int = 0):
-    # is_law_reform_gpt, law_reform_type_gpt 등
-    return await sb_select(TABLES["law_reform_gpt"], {"select": "*", "limit": limit, "offset": offset})
-
-# -------------------------
-# API (하단: recap, 회차 선택)
-# -------------------------
 @app.get("/api/sessions")
 async def api_sessions():
-    # text_recap(회차), people_recap(회차), data_request_recap(회의회차)에서 회차 모아 dropdown 구성
     rows_text = await sb_select(TABLES["text_recap"], {"select": "회차", "limit": 10000, "offset": 0})
     rows_people = await sb_select(TABLES["people_recap"], {"select": "회차", "limit": 10000, "offset": 0})
     rows_data = await sb_select(TABLES["data_request_recap"], {"select": "회의회차", "limit": 10000, "offset": 0})
@@ -110,60 +85,77 @@ async def api_sessions():
     ses = set()
     for r in rows_text:
         n = parse_session_no(r.get("회차"))
-        if n: ses.add(n)
+        if n:
+            ses.add(n)
     for r in rows_people:
         n = parse_session_no(r.get("회차"))
-        if n: ses.add(n)
+        if n:
+            ses.add(n)
     for r in rows_data:
         n = parse_session_no(r.get("회의회차"))
-        if n: ses.add(n)
+        if n:
+            ses.add(n)
 
     return sorted(ses)
+
 
 @app.get("/api/recap/text")
 async def api_recap_text(session_no: int = Query(...), limit: int = 50, offset: int = 0):
     lab = session_label(session_no)
-    return await sb_select(
-        TABLES["text_recap"],
-        {"select": "*", "회차": f"eq.{lab}", "limit": limit, "offset": offset},
-    )
+    return await sb_select(TABLES["text_recap"], {"select": "*", "회차": f"eq.{lab}", "limit": limit, "offset": offset})
+
 
 @app.get("/api/recap/people")
 async def api_recap_people(session_no: int = Query(...), limit: int = 100, offset: int = 0):
     lab = session_label(session_no)
-    return await sb_select(
-        TABLES["people_recap"],
-        {"select": "*", "회차": f"eq.{lab}", "limit": limit, "offset": offset},
-    )
+    return await sb_select(TABLES["people_recap"], {"select": "*", "회차": f"eq.{lab}", "limit": limit, "offset": offset})
+
 
 @app.get("/api/recap/data")
 async def api_recap_data(session_no: int = Query(...), limit: int = 100, offset: int = 0):
     lab = session_label(session_no)
-    return await sb_select(
-        TABLES["data_request_recap"],
-        {"select": "*", "회의회차": f"eq.{lab}", "limit": limit, "offset": offset},
-    )
+    return await sb_select(TABLES["data_request_recap"], {"select": "*", "회의회차": f"eq.{lab}", "limit": limit, "offset": offset})
 
-# -------------------------
-# DASHBOARD
-# -------------------------
+
+# =========================
+# Law + Questions API (통합 DB)
+# =========================
+@app.get("/api/law/stats/policy")
+async def api_law_stats_policy(limit: int = 5000, offset: int = 0):
+    return await sb_select(TABLES["law_reform_stats_policy_rows"], {"select": "*", "limit": limit, "offset": offset})
+
+
+@app.get("/api/law/stats/session")
+async def api_law_stats_session(limit: int = 5000, offset: int = 0):
+    return await sb_select(TABLES["law_reform_stats_session_rows"], {"select": "*", "limit": limit, "offset": offset})
+
+
+@app.get("/api/questions/stats/session")
+async def api_questions_stats_session(limit: int = 5000, offset: int = 0):
+    return await sb_select(TABLES["question_stats_session_rows"], {"select": "*", "limit": limit, "offset": offset})
+
+
+# =========================
+# Dashboard page
+# =========================
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard():
     return HTML_PAGE
+
 
 HTML_PAGE = r"""
 <!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <title>통합 대시보드</title>
+  <title>대시보드</title>
   <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
   <style>
     body { font-family: Arial, sans-serif; margin: 18px; background:#fafafa; }
     h2 { margin: 0 0 10px 0; }
     h3 { margin: 0 0 10px 0; }
-    .stack { display:flex; flex-direction:column; gap:14px; }
 
+    .stack { display:flex; flex-direction:column; gap:14px; }
     .card { background:#fff; border: 1px solid #e6e6e6; border-radius: 12px; padding: 14px; }
     .cardhead { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom: 8px; }
     .controls { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
@@ -172,7 +164,6 @@ HTML_PAGE = r"""
 
     .row2 { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .plot { width: 100%; height: 420px; }
-    .plot-sm { width: 100%; height: 380px; }
 
     .tabs { display:flex; gap:8px; margin: 10px 0 10px 0; }
     .tabbtn { padding: 6px 10px; border:1px solid #ddd; border-radius: 8px; background:#f8f8f8; cursor:pointer; }
@@ -187,7 +178,6 @@ HTML_PAGE = r"""
 
     .pager { display:flex; gap:10px; align-items:center; margin-top: 10px; }
 
-    /* 요구자료 카드 */
     .req-card { background:white; border-radius:10px; padding:12px 14px; margin-bottom:10px; box-shadow:0 1px 2px rgba(0,0,0,0.06); border:1px solid #eee; }
     .req-name { font-weight:700; font-size:15px; }
     .req-target { margin-top:4px; color:#666; font-size:13px; }
@@ -196,13 +186,13 @@ HTML_PAGE = r"""
 
     @media (max-width: 1100px){
       .row2 { grid-template-columns: 1fr; }
-      .plot, .plot-sm { height: 420px; }
+      .plot { height: 420px; }
     }
   </style>
 </head>
 <body>
 
-  <h2>통합 대시보드</h2>
+  <h2>대시보드</h2>
 
   <div class="stack">
 
@@ -223,15 +213,21 @@ HTML_PAGE = r"""
       <div class="muted">※ Top N은 이 블록에만 적용</div>
     </div>
 
-    <!-- [ Law 관련 + questions ] -->
+    <!-- [ Law 관련 + Questions ] -->
     <div class="card">
       <div class="cardhead">
         <h3>[ Law 관련 + Questions ]</h3>
-        <div class="muted">※ 분기×정당 기준(스택 바)</div>
+        <div class="muted">※ DB1 통합 테이블 기준</div>
       </div>
+
       <div class="row2">
-        <div id="plot_law_by_q" class="plot"></div>
-        <div id="plot_questions_by_q" class="plot"></div>
+        <div id="plot_law_by_category" class="plot"></div>
+        <div id="plot_law_by_party" class="plot"></div>
+      </div>
+
+      <div class="row2" style="margin-top:12px;">
+        <div id="plot_q_top10" class="plot"></div>
+        <div id="tbl_q_all" class="plot" style="height:auto; min-height:420px; overflow:auto;"></div>
       </div>
     </div>
 
@@ -290,6 +286,9 @@ async function fetchJSON(url){
   return await res.json();
 }
 
+/* =========================
+   Block1: Trend + party_domain_metrics (기존)
+   ========================= */
 function topDomains(rows, metric, topN){
   const sums = new Map();
   for (const r of rows){
@@ -327,9 +326,20 @@ function renderGroupedBar(divId, title, rows, metric, topN){
     barmode:"group",
     xaxis:{tickangle:-20, automargin:true},
     yaxis:{title:metric, automargin:true},
-    margin:{t:50, r:20, b:120, l:70},
-    legend:{orientation:"h"}
+
+    // ✅ 아래 여백 더 확보
+    margin:{t:50, r:20, b:210, l:70},
+
+    // ✅ 범례를 그래프 밖으로 더 내리기
+    legend:{
+      orientation:"h",
+      x:0,
+      y:-0.45,      // 더 내리려면 -0.55, -0.65
+      xanchor:"left",
+      yanchor:"top"
+    },
   }, {responsive:true, displaylogo:false});
+
 }
 
 function renderTrendLine(divId, title, rows, topN){
@@ -367,45 +377,219 @@ function renderTrendLine(divId, title, rows, topN){
     title:{text:title, x:0},
     xaxis:{tickangle:-20, automargin:true},
     yaxis:{title:"count", automargin:true},
-    margin:{t:50, r:20, b:120, l:70},
-    legend:{orientation:"h"}
+
+    // ✅ 아래 여백 더 확보 (범례가 밖으로 빠져도 안 잘리게)
+    margin:{t:50, r:20, b:210, l:70},
+
+    // ✅ 범례를 그래프 밖으로 더 내리기
+    legend:{
+      orientation:"h",
+      x:0,
+      y:-0.45,        // 더 내리려면 -0.55, -0.65
+      xanchor:"left",
+      yanchor:"top"
+    },
   }, {responsive:true, displaylogo:false});
 }
 
-function renderStackedByQuarter(divId, title, rows, valueCol){
-  // rows: year, quarter, party, valueCol
-  const enriched = rows.map(r => ({
-    period: (String(r.year) + "-Q" + String(r.quarter)),
-    party: r.party ?? "미분류",
-    v: Number(r[valueCol] ?? 0)
-  }));
+/* =========================
+   Block2: Law + Questions (핵심)
+   ========================= */
+function regVal(r){
+  // session_rows는 num_scope_rule일 수 있음
+  return Number(r.num_scope_regulation ?? r.num_scope_rule ?? 0);
+}
 
-  const periods = uniq(enriched.map(r=>r.period)).sort();
-  const parties = uniq(enriched.map(r=>r.party)).sort();
+function sortLabelsByTotal(rows, labelField, getLaw, getSys, getReg){
+  const sums = new Map();
+  for (const r of rows){
+    const k = r[labelField] ?? "미분류";
+    const v = (getLaw(r)+getSys(r)+getReg(r));
+    sums.set(k, (sums.get(k) ?? 0) + v);
+  }
+  return [...sums.entries()].sort((a,b)=>b[1]-a[1]).map(x=>x[0]);
+}
 
-  const map = new Map(parties.map(p=>[p, new Map()]));
-  for (const r of enriched){
-    map.get(r.party).set(r.period, (map.get(r.party).get(r.period) ?? 0) + r.v);
+function buildStack(rows, labelField, getLaw, getSys, getReg){
+  const labels = sortLabelsByTotal(rows, labelField, getLaw, getSys, getReg);
+  const m = new Map(labels.map(l => [l, {law:0, sys:0, reg:0}]));
+
+  for (const r of rows){
+    const k = r[labelField] ?? "미분류";
+    if (!m.has(k)) m.set(k, {law:0, sys:0, reg:0});
+    const obj = m.get(k);
+    obj.law += getLaw(r);
+    obj.sys += getSys(r);
+    obj.reg += getReg(r);
   }
 
-  const data = parties.map(p => ({
-    type:"bar",
-    name:p,
-    x:periods,
-    y:periods.map(per => map.get(p).get(per) ?? 0),
-    hovertemplate: "%{x}<br>"+p+"<br>"+valueCol+": %{y}<extra></extra>"
-  }));
+  return {
+    labels,
+    yLaw: labels.map(l => m.get(l).law),
+    ySys: labels.map(l => m.get(l).sys),
+    yReg: labels.map(l => m.get(l).reg),
+  };
+}
+
+function renderStacked(divId, title, xLabels, yLaw, ySys, yReg){
+  const data = [
+    {type:"bar", name:"법 개정",   x:xLabels, y:yLaw},
+    {type:"bar", name:"제도 개선", x:xLabels, y:ySys},
+    {type:"bar", name:"규정 변경", x:xLabels, y:yReg},
+  ];
 
   Plotly.newPlot(divId, data, {
     title:{text:title, x:0},
     barmode:"stack",
+
     xaxis:{tickangle:-20, automargin:true},
-    yaxis:{title:valueCol, automargin:true},
+    yaxis:{title:"건수", automargin:true},
+
+    // ✅ 아래 여백을 늘려서 범례가 안 가리게
+    margin:{t:50, r:20, b:170, l:70},
+
+    // ✅ 범례를 그래프 밖(아래)로 내리기
+    legend:{
+      orientation:"h",
+      x:0,
+      y:-0.25,   // 더 내리고 싶으면 -0.35 같은 식으로
+      xanchor:"left",
+      yanchor:"top"
+    },
+  }, {responsive:true, displaylogo:false});
+}
+
+function buildQuestionAgg(qRows){
+  const m = new Map(); // speaker||party -> sum
+  for (const r of qRows){
+    const speaker = r.speaker_name ?? "";
+    const party = r.party ?? "미분류";
+    const v = Number(r.num_questions ?? 0);
+    if (!speaker) continue;
+    const key = speaker + "||" + party;
+    m.set(key, (m.get(key) ?? 0) + v);
+  }
+  const arr = [...m.entries()].map(([k,v]) => {
+    const [speaker, party] = k.split("||");
+    return {speaker, party, num_questions:v};
+  });
+  arr.sort((a,b)=>b.num_questions - a.num_questions);
+  return arr;
+}
+
+function renderTop10(divId, rowsTop10){
+  const parties = [...new Set(rowsTop10.map(r=>r.party))].sort();
+  const x = rowsTop10.map(r=>r.speaker);
+
+  const data = parties.map(p => ({
+    type:"bar",
+    name:p,
+    x,
+    y: rowsTop10.map(r => (r.party===p ? r.num_questions : 0))
+  }));
+
+  Plotly.newPlot(divId, data, {
+    title:{text:"질의의원 Top 10", x:0},
+    barmode:"group",
+    xaxis:{tickangle:-20, automargin:true},
+    yaxis:{title:"질의 건수", automargin:true},
     margin:{t:50, r:20, b:120, l:70},
     legend:{orientation:"h"}
   }, {responsive:true, displaylogo:false});
 }
 
+let __qAll = [];
+let __qPage = 0;
+const __qPageSize = 10;
+
+window.__qPageChange = (delta) => {
+  __qPage = Math.max(0, __qPage + delta);
+  renderQuestionTable("tbl_q_all", __qAll, __qPage, __qPageSize);
+};
+
+function renderQuestionTable(divId, rowsAll, page, pageSize){
+  const total = rowsAll.length;
+  const start = page * pageSize;
+  const end = Math.min(total, start + pageSize);
+  const slice = rowsAll.slice(start, end);
+
+  const thead = "<tr><th>rank</th><th>speaker</th><th>party</th><th>num_questions</th></tr>";
+  const tbody = slice.map((r,i)=>
+    `<tr><td>${start+i+1}</td><td>${r.speaker}</td><td>${r.party}</td><td>${r.num_questions}</td></tr>`
+  ).join("");
+
+  const pager = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin:8px 0;">
+      <div>${start+1} - ${end} / ${total}</div>
+      <div style="display:flex;gap:8px;">
+        <button id="q_prev" ${page===0?"disabled":""}>◀</button>
+        <button id="q_next" ${end>=total?"disabled":""}>▶</button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById(divId).innerHTML =
+    pager + `<table><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
+
+  document.getElementById("q_prev")?.addEventListener("click", ()=> window.__qPageChange(-1));
+  document.getElementById("q_next")?.addEventListener("click", ()=> window.__qPageChange(+1));
+}
+
+async function loadLawQuestions(){
+  try{
+    const [policyRows, sessionRows, qRows] = await Promise.all([
+      fetchJSON("/api/law/stats/policy?limit=5000"),
+      fetchJSON("/api/law/stats/session?limit=5000"),
+      fetchJSON("/api/questions/stats/session?limit=5000"),
+    ]);
+
+    // (1) 카테고리별(policy_enum) 스택
+    const cat = buildStack(
+      policyRows,
+      "policy_enum",
+      r => Number(r.num_scope_law ?? 0),
+      r => Number(r.num_scope_system ?? 0),
+      r => Number(r.num_scope_regulation ?? 0)
+    );
+    renderStacked(
+      "plot_law_by_category",
+      "법 개정/제도 개선/규정 변경 (카테고리별)",
+      cat.labels, cat.yLaw, cat.ySys, cat.yReg
+    );
+
+    // (2) 정당별 스택
+    const party = buildStack(
+      sessionRows,
+      "party",
+      r => Number(r.num_scope_law ?? 0),
+      r => Number(r.num_scope_system ?? 0),
+      r => regVal(r)
+    );
+    renderStacked(
+      "plot_law_by_party",
+      "법 개정/제도 개선/규정 변경 (정당별)",
+      party.labels, party.yLaw, party.ySys, party.yReg
+    );
+
+    // (3) 질의의원 Top10 + 전체 테이블
+    __qAll = buildQuestionAgg(qRows);
+    const top10 = __qAll.slice(0, 10);
+    renderTop10("plot_q_top10", top10);
+
+    __qPage = 0;
+    renderQuestionTable("tbl_q_all", __qAll, __qPage, __qPageSize);
+
+  } catch(e){
+    setErr("plot_law_by_category", String(e));
+    setErr("plot_law_by_party", String(e));
+    setErr("plot_q_top10", String(e));
+    document.getElementById("tbl_q_all").innerHTML = `<div class="err">${String(e)}</div>`;
+  }
+}
+
+/* =========================
+   Recap (기존)
+   ========================= */
 function session_label(n){ return `${n}회`; }
 
 async function initSessions(){
@@ -464,36 +648,6 @@ function buildDataCards(rows, q){
   }).join("");
 }
 
-async function loadBlock1(){
-  const topN = Number(document.getElementById("topN").value || 7);
-  state.topN = topN;
-  try {
-    const [partyRows, trendRows] = await Promise.all([
-      fetchJSON("/api/party-domain-metrics?limit=5000"),
-      fetchJSON("/api/trend?limit=5000"),
-    ]);
-    renderTrendLine("plot_trend", "Trend: 분기별 정책도메인(topN)", trendRows, topN);
-    renderGroupedBar("plot_party_mpr", "정당별: 회의출석률(topN 도메인)", partyRows, "meeting_presence_rate", topN);
-  } catch (e){
-    setErr("plot_trend", String(e));
-    setErr("plot_party_mpr", String(e));
-  }
-}
-
-async function loadBlock2(){
-  try {
-    const [lawStateRows, questionsRows] = await Promise.all([
-      fetchJSON("/api/law/state?limit=5000"),
-      fetchJSON("/api/questions?limit=5000"),
-    ]);
-    renderStackedByQuarter("plot_law_by_q", "법개정 요구(분기×정당)", lawStateRows, "num_law_reform_requests");
-    renderStackedByQuarter("plot_questions_by_q", "질의 건수(분기×정당)", questionsRows, "num_questions");
-  } catch (e){
-    setErr("plot_law_by_q", String(e));
-    setErr("plot_questions_by_q", String(e));
-  }
-}
-
 async function loadRecap(){
   if (!state.sessionNo){
     document.getElementById("tableWrap").innerHTML = "<div>회차를 선택하세요</div>";
@@ -529,30 +683,51 @@ async function loadRecap(){
   }
 }
 
-function setActiveTab(tab){
-  state.tab = tab;
-  state.offset = 0;
-  document.querySelectorAll(".tabbtn").forEach(b=>{
-    b.classList.toggle("active", b.dataset.tab === tab);
-  });
-  loadRecap();
+async function loadBlock1(){
+  const topN = Number(document.getElementById("topN").value || 7);
+  state.topN = topN;
+  try {
+    const [partyRows, trendRows] = await Promise.all([
+      fetchJSON("/api/party-domain-metrics?limit=5000"),
+      fetchJSON("/api/trend?limit=5000"),
+    ]);
+    renderTrendLine("plot_trend", "Trend: 분기별 정책도메인(topN)", trendRows, topN);
+    renderGroupedBar("plot_party_mpr", "정당별: (topN 도메인)", partyRows, "meeting_presence_rate", topN);
+  } catch (e){
+    setErr("plot_trend", String(e));
+    setErr("plot_party_mpr", String(e));
+  }
 }
 
-document.getElementById("reloadAll").addEventListener("click", async ()=>{
+/* =========================
+   이벤트
+   ========================= */
+document.getElementById("reloadAll").addEventListener("click", async () => {
+  state.offset = 0;
   await loadBlock1();
-  await loadBlock2();
+  await loadLawQuestions();
   await loadRecap();
 });
 
-document.getElementById("sessionSel").addEventListener("change", async (e)=>{
+document.getElementById("sessionSel").addEventListener("change", async (e) => {
   state.sessionNo = Number(e.target.value);
   state.offset = 0;
   await loadRecap();
 });
 
-document.getElementById("q").addEventListener("input", ()=>{
-  const wrap = document.getElementById("tableWrap");
+document.getElementById("prev").addEventListener("click", async () => {
+  state.offset = Math.max(0, state.offset - state.limit[state.tab]);
+  await loadRecap();
+});
+
+document.getElementById("next").addEventListener("click", async () => {
+  state.offset = state.offset + state.limit[state.tab];
+  await loadRecap();
+});
+
+document.getElementById("q").addEventListener("input", () => {
   const q = document.getElementById("q").value || "";
+  const wrap = document.getElementById("tableWrap");
   if (state.tab === "data"){
     wrap.innerHTML = buildDataCards(state.lastRows, q);
   } else {
@@ -560,31 +735,24 @@ document.getElementById("q").addEventListener("input", ()=>{
   }
 });
 
-document.getElementById("prev").addEventListener("click", async ()=>{
-  const step = state.limit[state.tab];
-  state.offset = Math.max(0, state.offset - step);
-  await loadRecap();
-});
-document.getElementById("next").addEventListener("click", async ()=>{
-  const step = state.limit[state.tab];
-  if (!state.lastRows || state.lastRows.length < step) return;
-  state.offset += step;
-  await loadRecap();
-});
-
-document.querySelectorAll(".tabbtn").forEach(b=>{
-  b.addEventListener("click", ()=>setActiveTab(b.dataset.tab));
-});
-
-(async function boot(){
-  try{
-    await initSessions();
-    await loadBlock1();
-    await loadBlock2();
+for (const btn of document.querySelectorAll(".tabbtn")){
+  btn.addEventListener("click", async () => {
+    for (const b of document.querySelectorAll(".tabbtn")) b.classList.remove("active");
+    btn.classList.add("active");
+    state.tab = btn.dataset.tab;
+    state.offset = 0;
     await loadRecap();
-  } catch(e){
-    document.body.insertAdjacentHTML("beforeend", `<div class="err">${String(e)}</div>`);
-  }
+  });
+}
+
+/* =========================
+   초기 로드
+   ========================= */
+(async () => {
+  await initSessions();
+  await loadBlock1();
+  await loadLawQuestions();
+  await loadRecap();
 })();
 </script>
 

@@ -469,30 +469,50 @@ function pickFirst(obj, keys){
 }
 
 /* =========================
-   정당 색상(고정)
+   정당 색상(고정 · 최종)
    ========================= */
 function partyColor(party){
   const p = (party || "").trim();
+
   const map = new Map([
-    ["더불어민주당", "#3b82f6"], ["민주당", "#3b82f6"],
-    ["국민의힘", "#ef4444"],
-    ["정의당", "#f59e0b"],
-    ["개혁신당", "#f97316"],
-    ["조국혁신당", "#16a34a"],
-    ["진보당", "#ec4899"],
-    ["기본소득당", "#7c3aed"],
-    ["사회민주당", "#14b8a6"],
+    // 더불어민주당: 딥 네이비
+    ["더불어민주당", "#003B96"],
+    ["민주당", "#003B96"],
+
+    // 국민의힘: 레드
+    ["국민의힘", "#E61E2B"],
+
+    // 기본소득당: 민트/청록
+    ["기본소득당", "#00D2C3"],
+
+    // 조국혁신당: 트루 블루(민주당과 구분 확실)
+    ["조국혁신당", "#0073CF"],
+
+    // 무소속
     ["무소속", "#9ca3af"],
   ]);
+
   if (map.has(p)) return map.get(p);
-  if (p.includes("민주")) return "#3b82f6";
-  if (p.includes("국민의힘")) return "#ef4444";
-  if (p.includes("정의")) return "#f59e0b";
-  if (p.includes("개혁")) return "#f97316";
-  if (p.includes("조국")) return "#16a34a";
-  if (p.includes("진보")) return "#ec4899";
+
+  // 문자열 포함 대응
+  if (p.includes("더불어") || p.includes("민주")) return "#003B96";
+  if (p.includes("국민의힘")) return "#E61E2B";
+  if (p.includes("기본소득")) return "#00D2C3";
+  if (p.includes("조국")) return "#0073CF";
   if (p.includes("무소속")) return "#9ca3af";
+
   return "#64748b";
+}
+
+function textColorForBg(hex){
+  if (!hex || !hex.startsWith("#") || hex.length !== 7) return "#fff";
+  const r = parseInt(hex.slice(1,3), 16);
+  const g = parseInt(hex.slice(3,5), 16);
+  const b = parseInt(hex.slice(5,7), 16);
+
+  // 상대휘도 기준 → 밝으면 검정, 어두우면 흰색
+  const luminance = (0.2126*r + 0.7152*g + 0.0722*b) / 255;
+  return luminance > 0.6 ? "#111" : "#fff";
 }
 
 /* =========================
@@ -647,7 +667,18 @@ function renderPeopleCards(rows){
     const name = r["의원명"] ?? r["발언자"] ?? r["speaker_name"] ?? "";
     const party = r["정당"] ?? r["party"] ?? "";
     const body = r["발화내용 요약"] ?? r["요약"] ?? r["summary"] ?? r["text"] ?? "";
-    const partyTag = party ? `<span class="pill-red">${party}</span>` : "";
+    const partyBg = party ? partyColor(party) : null;
+    const partyFg = partyBg ? textColorForBg(partyBg) : "#111";
+
+    const partyTag = party
+      ? `<span class="badge" style="
+            background:${partyBg};
+            border-color:${partyBg};
+            color:${partyFg};
+            font-weight:800;
+        ">${party}</span>`
+      : "";
+
     return `
       <div class="sum-card">
         <div class="req-name">${name}${partyTag}</div>
@@ -999,7 +1030,8 @@ function renderPartyBarAll(divId, rows){
     name:p,
     x:l2s,
     y:l2s.map(l2 => m.get(p)?.get(l2) ?? 0),
-    hovertemplate: "%{x}<br>"+p+"<br>건수: %{y}<extra></extra>"
+    hovertemplate: "%{x}<br>"+p+"<br>건수: %{y}<extra></extra>",
+    marker: { color: partyColor(p) }   
   }));
 
   Plotly.newPlot(divId, data, {

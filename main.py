@@ -1048,6 +1048,17 @@ function renderStacked(divId, title, xLabels, yLaw, ySys, yReg){
   }, {responsive:true, displaylogo:false});
 }
 
+function numPick(r, keys, def=0){
+  for (const k of keys){
+    const v = r?.[k];
+    if (v !== undefined && v !== null && String(v).trim() !== ""){
+      const n = Number(v);
+      return Number.isFinite(n) ? n : def;
+    }
+  }
+  return def;
+}
+
 async function loadLaw(){
   try{
     const [policyRows, sessionRows] = await Promise.all([
@@ -1055,21 +1066,33 @@ async function loadLaw(){
       fetchJSON("/api/law/stats/session?limit=5000"),
     ]);
 
+    // ✅ 변경된 컬럼명 반영(한글/기존 영문 둘 다 대응)
+    const getLaw = (r) => numPick(r, ["num_scope_법개정", "num_scope_law"], 0);
+    const getSys = (r) => numPick(r, ["num_scope_제도개선", "num_scope_system"], 0);
+    const getReg = (r) => numPick(r, ["num_scope_규정변경", "num_scope_regulation", "num_scope_rule"], 0);
+
+    // ✅ 카테고리 라벨도 바뀌었으면 여기만 바꾸면 됨
+    // 샘플 기준: policy_mid (기존: policy_enum)
+    const policyLabelField =
+      (policyRows?.[0] && ("policy_mid" in policyRows[0])) ? "policy_mid" :
+      (policyRows?.[0] && ("policy_enum" in policyRows[0])) ? "policy_enum" :
+      "policy_mid";
+
     const cat = buildStack(
       policyRows,
-      "policy_enum",
-      r => Number(r.num_scope_law ?? 0),
-      r => Number(r.num_scope_system ?? 0),
-      r => Number(r.num_scope_regulation ?? 0)
+      policyLabelField,
+      getLaw,
+      getSys,
+      getReg
     );
     renderStacked("plot_law_by_category", "카테고리별", cat.labels, cat.yLaw, cat.ySys, cat.yReg);
 
     const party = buildStack(
       sessionRows,
       "party",
-      r => Number(r.num_scope_law ?? 0),
-      r => Number(r.num_scope_system ?? 0),
-      r => regVal(r)
+      getLaw,
+      getSys,
+      getReg
     );
     renderStacked("plot_law_by_party", "정당별", party.labels, party.yLaw, party.ySys, party.yReg);
 
@@ -1078,6 +1101,7 @@ async function loadLaw(){
     setErr("plot_law_by_party", String(e));
   }
 }
+
 
 /* =========================
    10) 트렌드/정당별 로드

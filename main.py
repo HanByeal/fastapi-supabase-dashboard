@@ -16,7 +16,7 @@ app = FastAPI(title="FastAPI + Supabase Dashboard (Single DB)")
 
 TABLES = {
     "trend": "trend",
-    "party_domain_metrics": "party_domain_metrics",
+    "party_domain_metrics": "party_domain_metrics_2",  # ✅ 여기만 교체
     "text_recap": "text_recap",
     "people_recap": "people_recap",
     "data_request_recap": "data_request_recap",
@@ -70,7 +70,39 @@ async def api_trend(limit: int = 5000, offset: int = 0):
 
 @app.get("/api/party-domain-metrics")
 async def api_party_domain_metrics(limit: int = 5000, offset: int = 0):
-    return await sb_select(TABLES["party_domain_metrics"], {"select": "*", "limit": limit, "offset": offset})
+    # ✅ 전체기간 합산이 목적이므로 offset/limit은 사실상 무의미해집니다.
+    #    (원하시면 limit/offset 제거해도 됨)
+    rows = await sb_select(
+        TABLES["party_domain_metrics"],
+        {
+            "select": "party,l2,base_count",
+            "limit": 100000,   # ✅ 충분히 크게
+            "offset": 0,
+        },
+    )
+
+    agg: Dict[tuple, int] = {}
+    for r in rows:
+        party = (r.get("party") or "미분류").strip()
+        l2 = (r.get("l2") or "미분류").strip()
+        v = r.get("base_count") or 0
+        try:
+            v = int(v)
+        except Exception:
+            v = 0
+        agg[(party, l2)] = agg.get((party, l2), 0) + v
+
+    # ✅ 프론트 renderPartyBarAll()이 r.meeting_count 를 쓰고 있으니
+    #    meeting_count = base_count 총합 으로 내려줌 (호환 유지)
+    out = [
+        {"party": party, "l2": l2, "meeting_count": total_base_count}
+        for (party, l2), total_base_count in agg.items()
+    ]
+
+    # 보기 좋게 정렬(선택)
+    out.sort(key=lambda x: (x["party"], x["l2"]))
+    return out
+
 
 
 @app.get("/api/sessions")
@@ -891,7 +923,7 @@ function renderPartyBarAll(divId, rows){
   }));
 
   Plotly.newPlot(divId, data, {
-    title:{text:"정당별 관심(건수)", x:0},
+    title:{text:"정당별 관심 (안건 등장 수)", x:0},
     barmode:"group",
     xaxis:{tickangle:-20, automargin:true},
     yaxis:{title:"건수", automargin:true},

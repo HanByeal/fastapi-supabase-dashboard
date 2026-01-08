@@ -219,7 +219,7 @@ HTML_PAGE = r"""
     /* ✅ 회의요약 상단: [주요안건 | 키워드(워드클라우드)] */
     .textGrid{
       display:grid;
-      grid-template-columns: 1fr 340px;
+      grid-template-columns: 3fr 2fr;   /* ✅ 왼쪽 66% / 오른쪽 33% */
       grid-template-rows: auto 1fr;
       gap:12px;
       align-items:stretch;
@@ -542,7 +542,7 @@ function renderWordCloud(divId, kwList){
 
   const scale = (x) => {
     if (maxW === minW) return 18;
-    return 12 + (x - minW) * (40 - 12) / (maxW - minW);
+    return 12 + (x - minW) * (52 - 12) / (maxW - minW);
   };
 
   const words = words0.map(k => ({

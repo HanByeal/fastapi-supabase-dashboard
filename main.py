@@ -16,7 +16,7 @@ app = FastAPI(title="FastAPI + Supabase Dashboard (Single DB)")
 
 TABLES = {
     "trend": "trend",
-    "party_domain_metrics": "party_domain_metrics_2",  # ✅ 여기만 교체
+    "party_domain_metrics": "party_domain_metrics",
     "text_recap": "text_recap",
     "people_recap": "people_recap",
     "data_request_recap": "data_request_recap",
@@ -70,39 +70,7 @@ async def api_trend(limit: int = 5000, offset: int = 0):
 
 @app.get("/api/party-domain-metrics")
 async def api_party_domain_metrics(limit: int = 5000, offset: int = 0):
-    # ✅ 전체기간 합산이 목적이므로 offset/limit은 사실상 무의미해집니다.
-    #    (원하시면 limit/offset 제거해도 됨)
-    rows = await sb_select(
-        TABLES["party_domain_metrics"],
-        {
-            "select": "party,l2,base_count",
-            "limit": 100000,   # ✅ 충분히 크게
-            "offset": 0,
-        },
-    )
-
-    agg: Dict[tuple, int] = {}
-    for r in rows:
-        party = (r.get("party") or "미분류").strip()
-        l2 = (r.get("l2") or "미분류").strip()
-        v = r.get("base_count") or 0
-        try:
-            v = int(v)
-        except Exception:
-            v = 0
-        agg[(party, l2)] = agg.get((party, l2), 0) + v
-
-    # ✅ 프론트 renderPartyBarAll()이 r.meeting_count 를 쓰고 있으니
-    #    meeting_count = base_count 총합 으로 내려줌 (호환 유지)
-    out = [
-        {"party": party, "l2": l2, "meeting_count": total_base_count}
-        for (party, l2), total_base_count in agg.items()
-    ]
-
-    # 보기 좋게 정렬(선택)
-    out.sort(key=lambda x: (x["party"], x["l2"]))
-    return out
-
+    return await sb_select(TABLES["party_domain_metrics"], {"select": "*", "limit": limit, "offset": offset})
 
 
 @app.get("/api/sessions")
@@ -251,7 +219,7 @@ HTML_PAGE = r"""
     /* ✅ 회의요약 상단: [주요안건 | 키워드(워드클라우드)] */
     .textGrid{
       display:grid;
-      grid-template-columns: 3fr 2fr;   /* ✅ 왼쪽 66% / 오른쪽 33% */
+      grid-template-columns: 3fr 2fr;
       grid-template-rows: auto 1fr;
       gap:12px;
       align-items:stretch;
@@ -299,6 +267,13 @@ HTML_PAGE = r"""
       <div class="cardhead">
         <div class="titleRow">
           <span class="badgeTitle">회차별 회의록 분석</span>
+
+          <!-- ✅ 대수 선택 추가 -->
+          <div class="selectWrap">
+            <span class="selectLabel">대수</span>
+            <select id="assemblySel"></select>
+          </div>
+
           <div class="selectWrap">
             <span class="selectLabel">회차</span>
             <select id="sessionSel"></select>
@@ -368,6 +343,10 @@ HTML_PAGE = r"""
    ========================= */
 const state = {
   tab: "text",
+
+  // ✅ 대수/회차
+  assemblyNo: null,
+  allSessions: [],
   sessionNo: null,
 
   // people/data는 더보기 방식
@@ -397,7 +376,7 @@ function setErr(divId, msg){
   document.getElementById(divId).innerHTML = `<div class="err">${msg}</div>`;
 }
 
-/* ✅ 여러 키 중 첫 값 선택(발언요약 안 나오던 핵심 원인 해결) */
+/* ✅ 여러 키 중 첫 값 선택 */
 function pickFirst(obj, keys){
   for (const k of keys){
     if (obj && obj[k] != null){
@@ -406,7 +385,7 @@ function pickFirst(obj, keys){
         const t = v.trim();
         if (t) return t;
       } else {
-        return v; // object/number 등은 그대로
+        return v;
       }
     }
   }
@@ -419,24 +398,106 @@ function normStr(x){
 }
 
 /* =========================
-   정당 색상(고정 · 최종)
+   ✅ 대수 매핑(하드코딩)
+   - ~378: 20대
+   - 379~414: 21대
+   - 415~ : 22대
+   ========================= */
+function getAssemblyBySession(n){
+  const x = Number(n);
+  if (!Number.isFinite(x)) return null;
+  if (x <= 378) return 20;
+  if (x >= 379 && x <= 414) return 21;
+  if (x >= 415) return 22;
+  return null;
+}
+
+function initAssemblyOptions(){
+  const sel = document.getElementById("assemblySel");
+  if (!sel) return;
+  sel.innerHTML = "";
+  [20, 21, 22].forEach(a => sel.appendChild(new Option(`${a}대`, String(a))));
+}
+
+function session_label(n){ return `${n}회`; }
+
+function renderSessionOptions(){
+  const sessionSel = document.getElementById("sessionSel");
+  sessionSel.innerHTML = "";
+
+  const a = Number(state.assemblyNo);
+  const filtered = (state.allSessions || []).filter(s => getAssemblyBySession(s) === a).sort((x,y)=>x-y);
+
+  if (!filtered.length){
+    sessionSel.innerHTML = `<option value="">(회차 없음)</option>`;
+    state.sessionNo = null;
+    return;
+  }
+
+  for (const s of filtered){
+    const opt = document.createElement("option");
+    opt.value = String(s);
+    opt.textContent = session_label(s);
+    sessionSel.appendChild(opt);
+  }
+
+  // 기존 선택 유지 가능하면 유지
+  const wanted = Number(state.sessionNo);
+  const optVals = [...sessionSel.options].map(o => Number(o.value));
+  if (wanted && optVals.includes(wanted)){
+    sessionSel.value = String(wanted);
+    state.sessionNo = wanted;
+  } else {
+    state.sessionNo = Number(sessionSel.value) || null;
+  }
+}
+
+/* =========================
+   정당 색상(현재 최신본 그대로)
    ========================= */
 function partyColor(party){
   const p = (party || "").trim();
+
+  const OPEN_HEX  = "#003E98";
+  const OPEN_GRAD = "linear-gradient(90deg, #003E98 0% 50%, #FBC700 50% 100%)";
+  const OPEN = (
+    typeof CSS !== "undefined" &&
+    CSS.supports &&
+    (CSS.supports("background-image", OPEN_GRAD) || CSS.supports("background", OPEN_GRAD))
+  ) ? OPEN_GRAD : OPEN_HEX;
+
   const map = new Map([
     ["더불어민주당", "#003B96"], ["민주당", "#003B96"],
     ["국민의힘", "#E61E2B"],
     ["기본소득당", "#00D2C3"],
     ["조국혁신당", "#0073CF"],
+
+    ["미래통합당", "#EF426F"],
+    ["미래한국당", "#B4065F"],
+    ["정의당", "#FFED00"],
+    ["더불어시민당", "#006CB7"],
+    ["열린민주당", OPEN],
+
+    ["새누리당", "#C9252B"],
+    ["국민의당", "#006241"],
     ["무소속", "#9ca3af"],
   ]);
   if (map.has(p)) return map.get(p);
+
+  if (p.includes("열린민주")) return OPEN;
+  if (p.includes("더불어시민")) return "#006CB7";
+  if (p.includes("미래한국")) return "#B4065F";
+  if (p.includes("미래통합")) return "#EF426F";
+  if (p.includes("새누리")) return "#C9252B";
+  if (p.includes("국민의당")) return "#006241";
+  if (p.includes("정의")) return "#FFED00";
 
   if (p.includes("더불어") || p.includes("민주")) return "#003B96";
   if (p.includes("국민의힘")) return "#E61E2B";
   if (p.includes("기본소득")) return "#00D2C3";
   if (p.includes("조국")) return "#0073CF";
   if (p.includes("무소속")) return "#9ca3af";
+
   return "#64748b";
 }
 
@@ -449,7 +510,7 @@ function textColorForBg(hex){
   return luminance > 0.6 ? "#111" : "#fff";
 }
 
-/* ✅ tab별 공통 필드 추출(키 이름 달라도 동작) */
+/* ✅ tab별 공통 필드 추출 */
 function getParty(r, tab){
   if (tab === "people"){
     return normStr(pickFirst(r, ["정당","party","소속정당","요구자정당"])) || "";
@@ -481,31 +542,40 @@ function getDataReq(r){
 }
 
 /* =========================
-   1) 회차 초기화
+   1) 회차 초기화 (✅ 대수 포함)
    ========================= */
-function session_label(n){ return `${n}회`; }
-
 async function initSessions(){
-  const sel = document.getElementById("sessionSel");
-  sel.innerHTML = "";
-  const sessions = await fetchJSON("/api/sessions");
+  initAssemblyOptions();
 
-  if (!sessions || sessions.length === 0){
-    sel.innerHTML = `<option value="">(회차 없음)</option>`;
+  const sessions = await fetchJSON("/api/sessions");
+  state.allSessions = (sessions || []).map(Number).filter(Number.isFinite);
+
+  if (!state.allSessions.length){
+    // 대수/회차 둘 다 비워두기
+    document.getElementById("assemblySel").innerHTML = `<option value="22">22대</option>`;
+    document.getElementById("sessionSel").innerHTML = `<option value="">(회차 없음)</option>`;
+    state.assemblyNo = 22;
     state.sessionNo = null;
     return;
   }
-  for (const s of sessions){
-    const opt = document.createElement("option");
-    opt.value = String(s);
-    opt.textContent = session_label(s);
-    sel.appendChild(opt);
-  }
-  state.sessionNo = Number(sel.value);
+
+  // 기본 대수: 가장 최신 회차 기준
+  const maxS = Math.max(...state.allSessions);
+  state.assemblyNo = getAssemblyBySession(maxS) || 22;
+
+  const assemblySel = document.getElementById("assemblySel");
+  assemblySel.value = String(state.assemblyNo);
+
+  // 대수에 맞게 회차 셀렉트 렌더
+  state.sessionNo = maxS;         // 우선 최신 회차를 잡고
+  renderSessionOptions();         // 해당 대수 내에서 유지되면 유지, 아니면 첫 값
+
+  // 최종 확정
+  state.sessionNo = Number(document.getElementById("sessionSel").value) || null;
 }
 
 /* =========================
-   2) 회의요약(text_recap) + WordCloud
+   2) 회의요약 + WordCloud
    ========================= */
 function splitAgenda(text){
   const t = (text || "").replace(/\s+/g, " ").trim();
@@ -515,13 +585,12 @@ function splitAgenda(text){
 
 function safeParseJSON(s){
   if (!s) return null;
-  if (typeof s === "object") return s; // ✅ 이미 object면 그대로
+  if (typeof s === "object") return s;
   if (typeof s !== "string") return null;
   try { return JSON.parse(s); } catch(e){ return null; }
 }
 
 function buildKeywordsFromRow(row){
-  // 1) RAW JSON (array) 우선
   const raw = safeParseJSON(row["키워드_RAW_JSON"]);
   if (Array.isArray(raw) && raw.length){
     const arr = raw
@@ -535,7 +604,6 @@ function buildKeywordsFromRow(row){
     if (arr.length) return arr;
   }
 
-  // 2) 가중치맵(JSON string or object)
   const mp = safeParseJSON(row["키워드_가중치맵"]);
   if (mp && typeof mp === "object" && !Array.isArray(mp)){
     const arr = Object.entries(mp)
@@ -544,7 +612,6 @@ function buildKeywordsFromRow(row){
     if (arr.length) return arr;
   }
 
-  // 3) "단어(숫자)" fallback
   const s = String(row["키워드(가중치포함)"] || "");
   const m = [...s.matchAll(/([^,]+)\(([\d.]+)\)/g)]
     .map(x => ({ text: x[1].trim(), weight: Number(x[2]), reason:"" }))
@@ -566,7 +633,6 @@ function renderWordCloud(divId, kwList){
     return;
   }
 
-  // 상위 80개 제한(너무 많으면 깨짐/느려짐)
   const words0 = kwList.slice().sort((a,b)=>b.weight-a.weight).slice(0, 80);
 
   const maxW = Math.max(...words0.map(k => k.weight));
@@ -584,7 +650,6 @@ function renderWordCloud(divId, kwList){
     reason: k.reason || ""
   }));
 
-  // ✅ 알록달록
   const color = d3.scaleOrdinal(d3.schemeTableau10 || d3.schemeCategory10);
 
   const svg = d3.select(el)
@@ -622,7 +687,6 @@ function renderWordCloud(divId, kwList){
       .style("font-size", d => `${d.size}px`)
       .text(d => d.text);
 
-    // 중심 보정(박스 밀림 방지)
     const bbox = g.node().getBBox();
     const dx = (w / 2) - (bbox.x + bbox.width / 2);
     const dy = (h / 2) - (bbox.y + bbox.height / 2);
@@ -674,13 +738,13 @@ function renderTextRecap(rows){
 }
 
 /* =========================
-   3) 발언요약(people_recap) 카드  ✅ 키 호환 강화
+   3) 발언요약 카드
    ========================= */
 function filterRows(rows, tab){
   let out = rows || [];
 
   const q = (state.q || "").trim().toLowerCase();
-  const partySel = (state.party || "").trim(); // "" = 전체
+  const partySel = (state.party || "").trim();
 
   if (partySel){
     out = out.filter(r => getParty(r, tab) === partySel);
@@ -724,14 +788,14 @@ function renderPeopleCards(rows){
 
   document.getElementById("moreBtnPeople")?.addEventListener("click", () => {
     state.shown.people += state.more.people;
-    renderRecapFromLast(); // ✅ 재호출 없이 렌더만
+    renderRecapFromLast();
   });
 
   return cards;
 }
 
 /* =========================
-   4) 요구자료(data_request_recap) 카드  ✅ 키 호환 강화
+   4) 요구자료 카드
    ========================= */
 function renderDataCards(rows){
   const filtered = filterRows(rows, "data");
@@ -771,14 +835,14 @@ function renderDataCards(rows){
 
   document.getElementById("moreBtnData")?.addEventListener("click", () => {
     state.shown.data += state.more.data;
-    renderRecapFromLast(); // ✅ 재호출 없이 렌더만
+    renderRecapFromLast();
   });
 
   return cards;
 }
 
 /* =========================
-   5) 정당 옵션 채우기 ✅ 키 호환 강화
+   5) 정당 옵션
    ========================= */
 function fillPartyOptions(rows, tab){
   const sel = document.getElementById("partySel");
@@ -786,15 +850,12 @@ function fillPartyOptions(rows, tab){
 
   const parties = uniq((rows || []).map(r => getParty(r, tab)).filter(Boolean)).sort();
 
-  // 전체
   sel.appendChild(new Option("전체", ""));
 
-  // 없으면 전체만 남김
   for (const p of parties){
     sel.appendChild(new Option(p, p));
   }
 
-  // 현재 선택값 복원(가능하면)
   const wanted = state.party || "";
   const opts = [...sel.options].map(o => o.value);
   if (opts.includes(wanted)) sel.value = wanted;
@@ -821,7 +882,6 @@ async function loadRecap(){
     const rows = await fetchJSON(urlMap[state.tab]);
     state.lastRows = rows || [];
 
-    // 탭별 UI
     const filterRow = document.getElementById("filterRow");
     const moreWrap = document.getElementById("moreWrap");
 
@@ -841,7 +901,6 @@ async function loadRecap(){
       return;
     }
 
-    // people/data
     filterRow.style.display = "flex";
     fillPartyOptions(state.lastRows, state.tab);
     renderRecapFromLast();
@@ -852,7 +911,6 @@ async function loadRecap(){
   }
 }
 
-/* ✅ 필터 입력 시 재호출 없이 렌더만(원래 잘되던 흐름 유지) */
 function renderRecapFromLast(){
   const rows = state.lastRows || [];
   if (state.tab === "people"){
@@ -966,7 +1024,7 @@ function renderTop10(divId, rowsTop10){
   }));
 
   Plotly.newPlot(divId, data, {
-    title:{text:"질의의원 Top 10", x:0},
+    title:{text:"질의의원 Top 15", x:0},
     barmode:"group",
     xaxis:{tickangle:-20, automargin:true},
     yaxis:{title:"질의 수", automargin:true},
@@ -1016,7 +1074,7 @@ async function loadQuestions(){
   try{
     const qRows = await fetchJSON("/api/questions/stats/session?limit=5000");
     __qAll = buildQuestionAgg(qRows);
-    renderTop10("plot_q_top10", __qAll.slice(0, 10));
+    renderTop10("plot_q_top10", __qAll.slice(0, 15));
     __qPage = 0;
     renderQuestionTable("tbl_q_all", __qAll, __qPage, __qPageSize);
   } catch(e){
@@ -1028,10 +1086,6 @@ async function loadQuestions(){
 /* =========================
    9) 법 개정/제도개선/규정변경
    ========================= */
-function regVal(r){
-  return Number(r.num_scope_regulation ?? r.num_scope_rule ?? 0);
-}
-
 function sortLabelsByTotal(rows, labelField, getLaw, getSys, getReg){
   const sums = new Map();
   for (const r of rows){
@@ -1098,34 +1152,19 @@ async function loadLaw(){
       fetchJSON("/api/law/stats/session?limit=5000"),
     ]);
 
-    // ✅ 변경된 컬럼명 반영(한글/기존 영문 둘 다 대응)
     const getLaw = (r) => numPick(r, ["num_scope_법개정", "num_scope_law"], 0);
     const getSys = (r) => numPick(r, ["num_scope_제도개선", "num_scope_system"], 0);
     const getReg = (r) => numPick(r, ["num_scope_규정변경", "num_scope_regulation", "num_scope_rule"], 0);
 
-    // ✅ 카테고리 라벨도 바뀌었으면 여기만 바꾸면 됨
-    // 샘플 기준: policy_mid (기존: policy_enum)
     const policyLabelField =
       (policyRows?.[0] && ("policy_mid" in policyRows[0])) ? "policy_mid" :
       (policyRows?.[0] && ("policy_enum" in policyRows[0])) ? "policy_enum" :
       "policy_mid";
 
-    const cat = buildStack(
-      policyRows,
-      policyLabelField,
-      getLaw,
-      getSys,
-      getReg
-    );
+    const cat = buildStack(policyRows, policyLabelField, getLaw, getSys, getReg);
     renderStacked("plot_law_by_category", "카테고리별", cat.labels, cat.yLaw, cat.ySys, cat.yReg);
 
-    const party = buildStack(
-      sessionRows,
-      "party",
-      getLaw,
-      getSys,
-      getReg
-    );
+    const party = buildStack(sessionRows, "party", getLaw, getSys, getReg);
     renderStacked("plot_law_by_party", "정당별", party.labels, party.yLaw, party.ySys, party.yReg);
 
   } catch(e){
@@ -1133,7 +1172,6 @@ async function loadLaw(){
     setErr("plot_law_by_party", String(e));
   }
 }
-
 
 /* =========================
    10) 트렌드/정당별 로드
@@ -1155,6 +1193,22 @@ async function loadTrendParty(){
 /* =========================
    이벤트
    ========================= */
+document.getElementById("assemblySel")?.addEventListener("change", async (e) => {
+  state.assemblyNo = Number(e.target.value);
+  state.sessionNo = null;
+
+  state.shown.people = state.more.people;
+  state.shown.data = state.more.data;
+  state.party = "";
+  state.q = "";
+  document.getElementById("q").value = "";
+
+  renderSessionOptions();
+  state.sessionNo = Number(document.getElementById("sessionSel").value) || null;
+
+  await loadRecap();
+});
+
 document.getElementById("sessionSel").addEventListener("change", async (e) => {
   state.sessionNo = Number(e.target.value);
 
@@ -1170,12 +1224,12 @@ document.getElementById("sessionSel").addEventListener("change", async (e) => {
 
 document.getElementById("partySel").addEventListener("change", (e) => {
   state.party = String(e.target.value || "");
-  renderRecapFromLast(); // ✅ 재호출 X
+  renderRecapFromLast();
 });
 
 document.getElementById("q").addEventListener("input", (e) => {
   state.q = String(e.target.value || "");
-  renderRecapFromLast(); // ✅ 재호출 X
+  renderRecapFromLast();
 });
 
 for (const btn of document.querySelectorAll(".tabbtn")){
@@ -1191,7 +1245,7 @@ for (const btn of document.querySelectorAll(".tabbtn")){
     state.q = "";
     document.getElementById("q").value = "";
 
-    await loadRecap(); // ✅ 탭 바뀔 때만 재호출
+    await loadRecap();
   });
 }
 

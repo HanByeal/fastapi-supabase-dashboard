@@ -268,7 +268,7 @@ HTML_PAGE = r"""
         <div class="titleRow">
           <span class="badgeTitle">회차별 회의록 분석</span>
 
-          <!-- ✅ 대수 선택 추가 -->
+          <!-- ✅ 대수 선택 -->
           <div class="selectWrap">
             <span class="selectLabel">대수</span>
             <select id="assemblySel"></select>
@@ -305,7 +305,20 @@ HTML_PAGE = r"""
     <!-- 2) 주요 질의의원 -->
     <div class="card">
       <div class="cardhead">
-        <h3>주요 질의의원</h3>
+        <div class="titleRow">
+          <h3 style="margin-right:10px;">주요 질의의원</h3>
+
+          <!-- ✅ 추가: 대수/회차 선택 (상단과 양방향 연동) -->
+          <div class="selectWrap">
+            <span class="selectLabel">대수</span>
+            <select id="qAssemblySel"></select>
+          </div>
+
+          <div class="selectWrap">
+            <span class="selectLabel">회차</span>
+            <select id="qSessionSel"></select>
+          </div>
+        </div>
       </div>
       <div class="row2">
         <div id="plot_q_top10" class="plot"></div>
@@ -344,10 +357,14 @@ HTML_PAGE = r"""
 const state = {
   tab: "text",
 
-  // ✅ 대수/회차
+  // ✅ 대수/회차 (상단)
   assemblyNo: null,
   allSessions: [],
   sessionNo: null,
+
+  // ✅ 대수/회차 (질의의원)
+  qAssemblyNo: null,
+  qSessionNo: null,
 
   // people/data는 더보기 방식
   more: { people: 20, data: 20 },
@@ -362,6 +379,9 @@ const state = {
 
   // for wordcloud
   __pendingWordcloud: [],
+
+  // ✅ 질문 원본 캐시(한번만 받아서 재사용)
+  qRawRows: null,
 };
 
 function uniq(arr){ return [...new Set(arr)]; }
@@ -412,8 +432,8 @@ function getAssemblyBySession(n){
   return null;
 }
 
-function initAssemblyOptions(){
-  const sel = document.getElementById("assemblySel");
+function initAssemblyOptions(selId){
+  const sel = document.getElementById(selId);
   if (!sel) return;
   sel.innerHTML = "";
   [20, 21, 22].forEach(a => sel.appendChild(new Option(`${a}대`, String(a))));
@@ -421,6 +441,7 @@ function initAssemblyOptions(){
 
 function session_label(n){ return `${n}회`; }
 
+/* 상단: 대수에 맞춰 회차 렌더 */
 function renderSessionOptions(){
   const sessionSel = document.getElementById("sessionSel");
   sessionSel.innerHTML = "";
@@ -441,7 +462,6 @@ function renderSessionOptions(){
     sessionSel.appendChild(opt);
   }
 
-  // 기존 선택 유지 가능하면 유지
   const wanted = Number(state.sessionNo);
   const optVals = [...sessionSel.options].map(o => Number(o.value));
   if (wanted && optVals.includes(wanted)){
@@ -449,6 +469,82 @@ function renderSessionOptions(){
     state.sessionNo = wanted;
   } else {
     state.sessionNo = Number(sessionSel.value) || null;
+  }
+}
+
+/* 하단(질의의원): 대수에 맞춰 회차 렌더 */
+function renderQSessionOptions(){
+  const sel = document.getElementById("qSessionSel");
+  sel.innerHTML = "";
+
+  const a = Number(state.qAssemblyNo);
+  const filtered = (state.allSessions || []).filter(s => getAssemblyBySession(s) === a).sort((x,y)=>x-y);
+
+  if (!filtered.length){
+    sel.innerHTML = `<option value="">(회차 없음)</option>`;
+    state.qSessionNo = null;
+    return;
+  }
+
+  for (const s of filtered){
+    const opt = document.createElement("option");
+    opt.value = String(s);
+    opt.textContent = session_label(s);
+    sel.appendChild(opt);
+  }
+
+  const wanted = Number(state.qSessionNo);
+  const optVals = [...sel.options].map(o => Number(o.value));
+  if (wanted && optVals.includes(wanted)){
+    sel.value = String(wanted);
+    state.qSessionNo = wanted;
+  } else {
+    state.qSessionNo = Number(sel.value) || null;
+  }
+}
+
+/* =========================
+   ✅ 상단 ↔ 하단 양방향 연동(무한루프 방지)
+   ========================= */
+let __syncLock = false;
+
+function syncTopToQ(){
+  if (__syncLock) return;
+  __syncLock = true;
+  try{
+    // 상단 기준으로 하단 맞추기
+    state.qAssemblyNo = state.assemblyNo;
+    state.qSessionNo = state.sessionNo;
+
+    const qAssemblySel = document.getElementById("qAssemblySel");
+    if (qAssemblySel) qAssemblySel.value = String(state.qAssemblyNo);
+
+    renderQSessionOptions();
+
+    const qSessionSel = document.getElementById("qSessionSel");
+    if (qSessionSel && state.qSessionNo) qSessionSel.value = String(state.qSessionNo);
+  } finally {
+    __syncLock = false;
+  }
+}
+
+function syncQToTop(){
+  if (__syncLock) return;
+  __syncLock = true;
+  try{
+    // 하단 기준으로 상단 맞추기
+    state.assemblyNo = state.qAssemblyNo;
+    state.sessionNo = state.qSessionNo;
+
+    const assemblySel = document.getElementById("assemblySel");
+    if (assemblySel) assemblySel.value = String(state.assemblyNo);
+
+    renderSessionOptions();
+
+    const sessionSel = document.getElementById("sessionSel");
+    if (sessionSel && state.sessionNo) sessionSel.value = String(state.sessionNo);
+  } finally {
+    __syncLock = false;
   }
 }
 
@@ -542,36 +638,47 @@ function getDataReq(r){
 }
 
 /* =========================
-   1) 회차 초기화 (✅ 대수 포함)
+   1) 회차 초기화 (✅ 상단/하단 같이 세팅)
    ========================= */
 async function initSessions(){
-  initAssemblyOptions();
+  initAssemblyOptions("assemblySel");
+  initAssemblyOptions("qAssemblySel");
 
   const sessions = await fetchJSON("/api/sessions");
   state.allSessions = (sessions || []).map(Number).filter(Number.isFinite);
 
   if (!state.allSessions.length){
-    // 대수/회차 둘 다 비워두기
+    // 안전 기본값
     document.getElementById("assemblySel").innerHTML = `<option value="22">22대</option>`;
     document.getElementById("sessionSel").innerHTML = `<option value="">(회차 없음)</option>`;
+    document.getElementById("qAssemblySel").innerHTML = `<option value="22">22대</option>`;
+    document.getElementById("qSessionSel").innerHTML = `<option value="">(회차 없음)</option>`;
     state.assemblyNo = 22;
     state.sessionNo = null;
+    state.qAssemblyNo = 22;
+    state.qSessionNo = null;
     return;
   }
 
-  // 기본 대수: 가장 최신 회차 기준
+  // 기본: 최신 회차
   const maxS = Math.max(...state.allSessions);
-  state.assemblyNo = getAssemblyBySession(maxS) || 22;
+  const baseAssembly = getAssemblyBySession(maxS) || 22;
+
+  // 상단 세팅
+  state.assemblyNo = baseAssembly;
+  state.sessionNo = maxS;
 
   const assemblySel = document.getElementById("assemblySel");
   assemblySel.value = String(state.assemblyNo);
-
-  // 대수에 맞게 회차 셀렉트 렌더
-  state.sessionNo = maxS;         // 우선 최신 회차를 잡고
-  renderSessionOptions();         // 해당 대수 내에서 유지되면 유지, 아니면 첫 값
-
-  // 최종 확정
+  renderSessionOptions();
   state.sessionNo = Number(document.getElementById("sessionSel").value) || null;
+
+  // 하단(질의의원) 세팅: 상단과 동일
+  state.qAssemblyNo = state.assemblyNo;
+  state.qSessionNo = state.sessionNo;
+  document.getElementById("qAssemblySel").value = String(state.qAssemblyNo);
+  renderQSessionOptions();
+  state.qSessionNo = Number(document.getElementById("qSessionSel").value) || null;
 }
 
 /* =========================
@@ -991,18 +1098,35 @@ function renderPartyBarAll(divId, rows){
 }
 
 /* =========================
-   8) 주요 질의의원
+   8) 주요 질의의원 (✅ session_no 필터 + 상단연동)
    ========================= */
-function buildQuestionAgg(qRows){
+
+/* 질문 row에서 session_no 찾기(유연하게) */
+function getQuestionSessionNo(r){
+  // 흔한 후보 키들
+  const v = pickFirst(r, ["session_no","회차","회의회차","session","meeting_session","sessionNo"]);
+  if (v == null) return null;
+  const m = String(v).match(/(\d+)/);
+  return m ? Number(m[1]) : null;
+}
+
+function buildQuestionAggFiltered(qRows, sessionNo){
+  const ses = Number(sessionNo);
   const m = new Map();
-  for (const r of qRows){
-    const speaker = r.speaker_name ?? "";
+
+  for (const r of (qRows || [])){
+    const sNo = getQuestionSessionNo(r);
+    if (ses && sNo !== ses) continue;
+
+    const speaker = r.speaker_name ?? r.speaker ?? "";
     const party = r.party ?? "미분류";
     const v = Number(r.num_questions ?? 0);
     if (!speaker) continue;
+
     const key = speaker + "||" + party;
     m.set(key, (m.get(key) ?? 0) + v);
   }
+
   const arr = [...m.entries()].map(([k,v]) => {
     const [speaker, party] = k.split("||");
     return {speaker, party, num_questions:v};
@@ -1011,27 +1135,34 @@ function buildQuestionAgg(qRows){
   return arr;
 }
 
-function renderTop10(divId, rowsTop10){
-  const parties = [...new Set(rowsTop10.map(r=>r.party))].sort();
-  const x = rowsTop10.map(r=>r.speaker);
 
-  const data = parties.map(p => ({
-    type:"bar",
-    name:p,
+function renderTop10(divId, rowsTop10){
+
+  const x = rowsTop10.map(r => String(r.speaker).trim());
+  const y = rowsTop10.map(r => Number(r.num_questions ?? 0));
+  const parties = rowsTop10.map(r => r.party || "미분류");
+  const colors = parties.map(p => partyColor(p));
+
+  const data = [{
+    type: "bar",
     x,
-    y: rowsTop10.map(r => (r.party===p ? r.num_questions : 0)),
-    marker: { color: partyColor(p) }
-  }));
+    y,
+    marker: { color: colors },
+    customdata: parties,
+    hovertemplate: "%{x}<br>%{customdata}<br>질의 수: %{y}<extra></extra>",
+    offset: -0.45,      
+  }];
 
   Plotly.newPlot(divId, data, {
-    title:{text:"질의의원 Top 15", x:0},
-    barmode:"group",
+    title:{text:`질의의원 Top ${x.length}`, x:0},
     xaxis:{tickangle:-20, automargin:true},
     yaxis:{title:"질의 수", automargin:true},
     margin:{t:50, r:20, b:120, l:70},
-    legend:{orientation:"h"}
+    showlegend:false,
+    bargap: 0.55, 
   }, {responsive:true, displaylogo:false});
 }
+
 
 let __qAll = [];
 let __qPage = 0;
@@ -1070,13 +1201,20 @@ function renderQuestionTable(divId, rowsAll, page, pageSize){
   document.getElementById("q_next")?.addEventListener("click", ()=> window.__qPageChange(+1));
 }
 
-async function loadQuestions(){
+async function loadQuestions(forceFetch=false){
   try{
-    const qRows = await fetchJSON("/api/questions/stats/session?limit=5000");
-    __qAll = buildQuestionAgg(qRows);
+    // 원본은 한번만 받고 재사용
+    if (forceFetch || !Array.isArray(state.qRawRows)){
+      state.qRawRows = await fetchJSON("/api/questions/stats/session?limit=5000");
+    }
+
+    const sessionNo = state.qSessionNo || state.sessionNo; // 안전 fallback
+    __qAll = buildQuestionAggFiltered(state.qRawRows, sessionNo);
+
     renderTop10("plot_q_top10", __qAll.slice(0, 15));
     __qPage = 0;
     renderQuestionTable("tbl_q_all", __qAll, __qPage, __qPageSize);
+
   } catch(e){
     setErr("plot_q_top10", String(e));
     document.getElementById("tbl_q_all").innerHTML = `<div class="err">${String(e)}</div>`;
@@ -1191,7 +1329,7 @@ async function loadTrendParty(){
 }
 
 /* =========================
-   이벤트
+   이벤트(상단)
    ========================= */
 document.getElementById("assemblySel")?.addEventListener("change", async (e) => {
   state.assemblyNo = Number(e.target.value);
@@ -1206,7 +1344,11 @@ document.getElementById("assemblySel")?.addEventListener("change", async (e) => 
   renderSessionOptions();
   state.sessionNo = Number(document.getElementById("sessionSel").value) || null;
 
+  // ✅ 상단 변경 → 하단 동기화 + 질문 갱신
+  syncTopToQ();
+
   await loadRecap();
+  await loadQuestions(false); // 캐시 재사용
 });
 
 document.getElementById("sessionSel").addEventListener("change", async (e) => {
@@ -1219,7 +1361,11 @@ document.getElementById("sessionSel").addEventListener("change", async (e) => {
   state.q = "";
   document.getElementById("q").value = "";
 
+  // ✅ 상단 변경 → 하단 동기화 + 질문 갱신
+  syncTopToQ();
+
   await loadRecap();
+  await loadQuestions(false);
 });
 
 document.getElementById("partySel").addEventListener("change", (e) => {
@@ -1250,12 +1396,59 @@ for (const btn of document.querySelectorAll(".tabbtn")){
 }
 
 /* =========================
+   이벤트(하단: 질의의원)
+   ========================= */
+document.getElementById("qAssemblySel")?.addEventListener("change", async (e) => {
+  if (__syncLock) return;
+
+  state.qAssemblyNo = Number(e.target.value);
+  state.qSessionNo = null;
+
+  renderQSessionOptions();
+  state.qSessionNo = Number(document.getElementById("qSessionSel").value) || null;
+
+  // ✅ 하단 변경 → 상단 동기화 + 회의록 갱신
+  syncQToTop();
+
+  // 상단쪽 상태 초기화(탭/필터는 유지, 회차만 바뀐 것이므로 people/data 더보기 초기화만)
+  state.shown.people = state.more.people;
+  state.shown.data = state.more.data;
+  state.party = "";
+  state.q = "";
+  document.getElementById("q").value = "";
+
+  await loadRecap();
+  await loadQuestions(false);
+});
+
+document.getElementById("qSessionSel")?.addEventListener("change", async (e) => {
+  if (__syncLock) return;
+
+  state.qSessionNo = Number(e.target.value) || null;
+
+  // ✅ 하단 변경 → 상단 동기화 + 회의록 갱신
+  syncQToTop();
+
+  state.shown.people = state.more.people;
+  state.shown.data = state.more.data;
+  state.party = "";
+  state.q = "";
+  document.getElementById("q").value = "";
+
+  await loadRecap();
+  await loadQuestions(false);
+});
+
+/* =========================
    초기 로드
    ========================= */
 (async () => {
   await initSessions();
   await loadRecap();
-  await loadQuestions();
+
+  // ✅ 질문 원본 한번만 로드 + 현재 회차로 필터하여 렌더
+  await loadQuestions(true);
+
   await loadLaw();
   await loadTrendParty();
 })();

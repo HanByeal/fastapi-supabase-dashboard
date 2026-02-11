@@ -134,11 +134,17 @@ async def api_law_stats_session(limit: int = 5000, offset: int = 0):
 
 
 @app.get("/api/questions/stats/session")
-async def api_questions_stats_session(limit: int = 5000, offset: int = 0):
-    return await sb_select(
-        TABLES["question_stats_session_rows"],
-        {"select": "*", "limit": limit, "offset": offset},
-    )
+async def api_questions_stats_session(
+    session_no: Optional[int] = Query(None),
+    limit: int = 5000,
+    offset: int = 0
+):
+    params = {"select": "*", "limit": limit, "offset": offset}
+    if session_no is not None:
+        # DB 컬럼이 session_no(숫자)라면 그대로 eq 필터
+        params["session_no"] = f"eq.{session_no}"
+
+    return await sb_select(TABLES["question_stats_session_rows"], params)
 
 
 # =========================
@@ -419,14 +425,14 @@ function normStr(x){
 
 /* =========================
    ✅ 대수 매핑(하드코딩)
-   - ~378: 20대
+   - 353~378: 20대
    - 379~414: 21대
    - 415~ : 22대
    ========================= */
 function getAssemblyBySession(n){
   const x = Number(n);
   if (!Number.isFinite(x)) return null;
-  if (x <= 378) return 20;
+  if (x >= 353 && x <= 378) return 20;
   if (x >= 379 && x <= 414) return 21;
   if (x >= 415) return 22;
   return null;
@@ -1201,14 +1207,21 @@ function renderQuestionTable(divId, rowsAll, page, pageSize){
   document.getElementById("q_next")?.addEventListener("click", ()=> window.__qPageChange(+1));
 }
 
-async function loadQuestions(forceFetch=false){
+async function loadQuestions(){
   try{
-    // 원본은 한번만 받고 재사용
-    if (forceFetch || !Array.isArray(state.qRawRows)){
-      state.qRawRows = await fetchJSON("/api/questions/stats/session?limit=5000");
+    const sessionNo = state.qSessionNo || state.sessionNo;
+    if (!sessionNo){
+      Plotly.purge("plot_q_top10");
+      document.getElementById("tbl_q_all").innerHTML = "<div class='err'>회차를 선택하세요</div>";
+      return;
     }
 
-    const sessionNo = state.qSessionNo || state.sessionNo; // 안전 fallback
+    // ✅ 회차로 서버에서 필터해서 가져오기 (20대 누락 원인 제거)
+    state.qRawRows = await fetchJSON(
+      `/api/questions/stats/session?session_no=${sessionNo}&limit=5000&offset=0`
+    );
+
+    // 서버에서 이미 session_no로 필터됨 → 여기서는 그냥 합치기만 해도 됨
     __qAll = buildQuestionAggFiltered(state.qRawRows, sessionNo);
 
     renderTop10("plot_q_top10", __qAll.slice(0, 15));
@@ -1220,6 +1233,7 @@ async function loadQuestions(forceFetch=false){
     document.getElementById("tbl_q_all").innerHTML = `<div class="err">${String(e)}</div>`;
   }
 }
+
 
 /* =========================
    9) 법 개정/제도개선/규정변경

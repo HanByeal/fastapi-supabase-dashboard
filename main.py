@@ -260,6 +260,35 @@ HTML_PAGE = r"""
       .textGrid .rightKw{ grid-column:1; grid-row:auto; }
       .kwCloud{ height: 220px; }
     }
+
+    /* ✅ select 옆 로딩 표시 */
+    .cardLoading{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid #e5e7eb;
+      background:#f8fafc;
+      color:#334155;
+      font-weight:900;
+      font-size:12px;
+      letter-spacing:-0.2px;
+      user-select:none;
+    }
+    .titleRow .cardLoading{ margin-left: 6px; }
+
+    .miniSpin{
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      border: 2px solid #cbd5e1;
+      border-top-color:#334155;
+      animation: spin 0.8s linear infinite;
+      display:inline-block;
+      flex: 0 0 auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 
@@ -284,6 +313,11 @@ HTML_PAGE = r"""
             <span class="selectLabel">회차</span>
             <select id="sessionSel"></select>
           </div>
+
+          <!-- ✅ 로딩 표시(셀렉트 바로 옆) -->
+          <span id="loadingRecap" class="cardLoading" style="display:none;">
+            <span class="miniSpin"></span> 로딩 중…
+          </span>
         </div>
       </div>
 
@@ -314,7 +348,6 @@ HTML_PAGE = r"""
         <div class="titleRow">
           <h3 style="margin-right:10px;">주요 질의의원</h3>
 
-          <!-- ✅ 추가: 대수/회차 선택 (상단과 양방향 연동) -->
           <div class="selectWrap">
             <span class="selectLabel">대수</span>
             <select id="qAssemblySel"></select>
@@ -324,6 +357,11 @@ HTML_PAGE = r"""
             <span class="selectLabel">회차</span>
             <select id="qSessionSel"></select>
           </div>
+
+          <!-- ✅ 로딩 표시(셀렉트 바로 옆) -->
+          <span id="loadingQ" class="cardLoading" style="display:none;">
+            <span class="miniSpin"></span> 로딩 중…
+          </span>
         </div>
       </div>
       <div class="row2">
@@ -424,6 +462,28 @@ function normStr(x){
 }
 
 /* =========================
+   ✅ 로딩 표시(셀렉트 옆)
+   ========================= */
+function setLoading(which, on){
+  const id = (which === "recap") ? "loadingRecap" : "loadingQ";
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.display = on ? "inline-flex" : "none";
+}
+
+/* “동시에 갱신 + 기존 화면 유지 + 로딩만” */
+async function refreshBoth(){
+  setLoading("recap", true);
+  setLoading("q", true);
+  try{
+    await Promise.allSettled([ loadRecap(), loadQuestions() ]);
+  } finally {
+    setLoading("recap", false);
+    setLoading("q", false);
+  }
+}
+
+/* =========================
    ✅ 대수 매핑(하드코딩)
    - 353~378: 20대
    - 379~414: 21대
@@ -518,7 +578,6 @@ function syncTopToQ(){
   if (__syncLock) return;
   __syncLock = true;
   try{
-    // 상단 기준으로 하단 맞추기
     state.qAssemblyNo = state.assemblyNo;
     state.qSessionNo = state.sessionNo;
 
@@ -538,7 +597,6 @@ function syncQToTop(){
   if (__syncLock) return;
   __syncLock = true;
   try{
-    // 하단 기준으로 상단 맞추기
     state.assemblyNo = state.qAssemblyNo;
     state.sessionNo = state.qSessionNo;
 
@@ -654,7 +712,6 @@ async function initSessions(){
   state.allSessions = (sessions || []).map(Number).filter(Number.isFinite);
 
   if (!state.allSessions.length){
-    // 안전 기본값
     document.getElementById("assemblySel").innerHTML = `<option value="22">22대</option>`;
     document.getElementById("sessionSel").innerHTML = `<option value="">(회차 없음)</option>`;
     document.getElementById("qAssemblySel").innerHTML = `<option value="22">22대</option>`;
@@ -666,11 +723,9 @@ async function initSessions(){
     return;
   }
 
-  // 기본: 최신 회차
   const maxS = Math.max(...state.allSessions);
   const baseAssembly = getAssemblyBySession(maxS) || 22;
 
-  // 상단 세팅
   state.assemblyNo = baseAssembly;
   state.sessionNo = maxS;
 
@@ -679,7 +734,6 @@ async function initSessions(){
   renderSessionOptions();
   state.sessionNo = Number(document.getElementById("sessionSel").value) || null;
 
-  // 하단(질의의원) 세팅: 상단과 동일
   state.qAssemblyNo = state.assemblyNo;
   state.qSessionNo = state.sessionNo;
   document.getElementById("qAssemblySel").value = String(state.qAssemblyNo);
@@ -991,37 +1045,31 @@ async function loadRecap(){
     data: `/api/recap/data?session_no=${state.sessionNo}&limit=5000&offset=0`,
   };
 
-  try {
-    const rows = await fetchJSON(urlMap[state.tab]);
-    state.lastRows = rows || [];
+  const rows = await fetchJSON(urlMap[state.tab]);
+  state.lastRows = rows || [];
 
-    const filterRow = document.getElementById("filterRow");
-    const moreWrap = document.getElementById("moreWrap");
+  const filterRow = document.getElementById("filterRow");
+  const moreWrap = document.getElementById("moreWrap");
 
-    if (state.tab === "text"){
-      filterRow.style.display = "none";
-      moreWrap.innerHTML = "";
-      state.q = "";
-      state.party = "";
-      document.getElementById("q").value = "";
-      document.getElementById("partySel").innerHTML = "";
+  if (state.tab === "text"){
+    filterRow.style.display = "none";
+    moreWrap.innerHTML = "";
+    state.q = "";
+    state.party = "";
+    document.getElementById("q").value = "";
+    document.getElementById("partySel").innerHTML = "";
 
-      document.getElementById("tableWrap").innerHTML = renderTextRecap(state.lastRows);
+    document.getElementById("tableWrap").innerHTML = renderTextRecap(state.lastRows);
 
-      setTimeout(() => {
-        renderWordCloud("wc_keywords", state.__pendingWordcloud || []);
-      }, 0);
-      return;
-    }
-
-    filterRow.style.display = "flex";
-    fillPartyOptions(state.lastRows, state.tab);
-    renderRecapFromLast();
-
-  } catch (e){
-    document.getElementById("tableWrap").innerHTML = `<div class="err">${String(e)}</div>`;
-    document.getElementById("moreWrap").innerHTML = "";
+    setTimeout(() => {
+      renderWordCloud("wc_keywords", state.__pendingWordcloud || []);
+    }, 0);
+    return;
   }
+
+  filterRow.style.display = "flex";
+  fillPartyOptions(state.lastRows, state.tab);
+  renderRecapFromLast();
 }
 
 function renderRecapFromLast(){
@@ -1104,12 +1152,9 @@ function renderPartyBarAll(divId, rows){
 }
 
 /* =========================
-   8) 주요 질의의원 (✅ session_no 필터 + 상단연동)
+   8) 주요 질의의원
    ========================= */
-
-/* 질문 row에서 session_no 찾기(유연하게) */
 function getQuestionSessionNo(r){
-  // 흔한 후보 키들
   const v = pickFirst(r, ["session_no","회차","회의회차","session","meeting_session","sessionNo"]);
   if (v == null) return null;
   const m = String(v).match(/(\d+)/);
@@ -1141,9 +1186,7 @@ function buildQuestionAggFiltered(qRows, sessionNo){
   return arr;
 }
 
-
 function renderTop10(divId, rowsTop10){
-
   const x = rowsTop10.map(r => String(r.speaker).trim());
   const y = rowsTop10.map(r => Number(r.num_questions ?? 0));
   const parties = rowsTop10.map(r => r.party || "미분류");
@@ -1156,7 +1199,7 @@ function renderTop10(divId, rowsTop10){
     marker: { color: colors },
     customdata: parties,
     hovertemplate: "%{x}<br>%{customdata}<br>질의 수: %{y}<extra></extra>",
-    offset: -0.45,      
+    offset: -0.45,
   }];
 
   Plotly.newPlot(divId, data, {
@@ -1165,10 +1208,9 @@ function renderTop10(divId, rowsTop10){
     yaxis:{title:"질의 수", automargin:true},
     margin:{t:50, r:20, b:120, l:70},
     showlegend:false,
-    bargap: 0.55, 
+    bargap: 0.55,
   }, {responsive:true, displaylogo:false});
 }
-
 
 let __qAll = [];
 let __qPage = 0;
@@ -1208,32 +1250,23 @@ function renderQuestionTable(divId, rowsAll, page, pageSize){
 }
 
 async function loadQuestions(){
-  try{
-    const sessionNo = state.qSessionNo || state.sessionNo;
-    if (!sessionNo){
-      Plotly.purge("plot_q_top10");
-      document.getElementById("tbl_q_all").innerHTML = "<div class='err'>회차를 선택하세요</div>";
-      return;
-    }
-
-    // ✅ 회차로 서버에서 필터해서 가져오기 (20대 누락 원인 제거)
-    state.qRawRows = await fetchJSON(
-      `/api/questions/stats/session?session_no=${sessionNo}&limit=5000&offset=0`
-    );
-
-    // 서버에서 이미 session_no로 필터됨 → 여기서는 그냥 합치기만 해도 됨
-    __qAll = buildQuestionAggFiltered(state.qRawRows, sessionNo);
-
-    renderTop10("plot_q_top10", __qAll.slice(0, 15));
-    __qPage = 0;
-    renderQuestionTable("tbl_q_all", __qAll, __qPage, __qPageSize);
-
-  } catch(e){
-    setErr("plot_q_top10", String(e));
-    document.getElementById("tbl_q_all").innerHTML = `<div class="err">${String(e)}</div>`;
+  const sessionNo = state.qSessionNo || state.sessionNo;
+  if (!sessionNo){
+    Plotly.purge("plot_q_top10");
+    document.getElementById("tbl_q_all").innerHTML = "<div class='err'>회차를 선택하세요</div>";
+    return;
   }
-}
 
+  state.qRawRows = await fetchJSON(
+    `/api/questions/stats/session?session_no=${sessionNo}&limit=5000&offset=0`
+  );
+
+  __qAll = buildQuestionAggFiltered(state.qRawRows, sessionNo);
+
+  renderTop10("plot_q_top10", __qAll.slice(0, 15));
+  __qPage = 0;
+  renderQuestionTable("tbl_q_all", __qAll, __qPage, __qPageSize);
+}
 
 /* =========================
    9) 법 개정/제도개선/규정변경
@@ -1358,11 +1391,8 @@ document.getElementById("assemblySel")?.addEventListener("change", async (e) => 
   renderSessionOptions();
   state.sessionNo = Number(document.getElementById("sessionSel").value) || null;
 
-  // ✅ 상단 변경 → 하단 동기화 + 질문 갱신
   syncTopToQ();
-
-  await loadRecap();
-  await loadQuestions(false); // 캐시 재사용
+  await refreshBoth();
 });
 
 document.getElementById("sessionSel").addEventListener("change", async (e) => {
@@ -1375,11 +1405,8 @@ document.getElementById("sessionSel").addEventListener("change", async (e) => {
   state.q = "";
   document.getElementById("q").value = "";
 
-  // ✅ 상단 변경 → 하단 동기화 + 질문 갱신
   syncTopToQ();
-
-  await loadRecap();
-  await loadQuestions(false);
+  await refreshBoth();
 });
 
 document.getElementById("partySel").addEventListener("change", (e) => {
@@ -1405,7 +1432,9 @@ for (const btn of document.querySelectorAll(".tabbtn")){
     state.q = "";
     document.getElementById("q").value = "";
 
-    await loadRecap();
+    setLoading("recap", true);
+    try { await loadRecap(); }
+    finally { setLoading("recap", false); }
   });
 }
 
@@ -1421,18 +1450,15 @@ document.getElementById("qAssemblySel")?.addEventListener("change", async (e) =>
   renderQSessionOptions();
   state.qSessionNo = Number(document.getElementById("qSessionSel").value) || null;
 
-  // ✅ 하단 변경 → 상단 동기화 + 회의록 갱신
   syncQToTop();
 
-  // 상단쪽 상태 초기화(탭/필터는 유지, 회차만 바뀐 것이므로 people/data 더보기 초기화만)
   state.shown.people = state.more.people;
   state.shown.data = state.more.data;
   state.party = "";
   state.q = "";
   document.getElementById("q").value = "";
 
-  await loadRecap();
-  await loadQuestions(false);
+  await refreshBoth();
 });
 
 document.getElementById("qSessionSel")?.addEventListener("change", async (e) => {
@@ -1440,7 +1466,6 @@ document.getElementById("qSessionSel")?.addEventListener("change", async (e) => 
 
   state.qSessionNo = Number(e.target.value) || null;
 
-  // ✅ 하단 변경 → 상단 동기화 + 회의록 갱신
   syncQToTop();
 
   state.shown.people = state.more.people;
@@ -1449,8 +1474,7 @@ document.getElementById("qSessionSel")?.addEventListener("change", async (e) => 
   state.q = "";
   document.getElementById("q").value = "";
 
-  await loadRecap();
-  await loadQuestions(false);
+  await refreshBoth();
 });
 
 /* =========================
@@ -1458,10 +1482,14 @@ document.getElementById("qSessionSel")?.addEventListener("change", async (e) => 
    ========================= */
 (async () => {
   await initSessions();
-  await loadRecap();
 
-  // ✅ 질문 원본 한번만 로드 + 현재 회차로 필터하여 렌더
-  await loadQuestions(true);
+  setLoading("recap", true);
+  try { await loadRecap(); }
+  finally { setLoading("recap", false); }
+
+  setLoading("q", true);
+  try { await loadQuestions(); }
+  finally { setLoading("q", false); }
 
   await loadLaw();
   await loadTrendParty();

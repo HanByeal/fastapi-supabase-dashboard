@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>행정안전위원회 향후 회의 쟁점 예측</title>
+  <title>뉴스 기반 행안위 안건 후보 브리핑</title>
   <style>
     /* ====== (기존 index.html 스타일을 최대한 유지) ====== */
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -227,6 +227,22 @@
       white-space: pre-wrap;
     }
 
+    .answer-row{
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .answer-icon{
+      flex: 0 0 auto;
+      width: 22px;
+      line-height: 1.4;
+      margin-top: 1px;
+    }
+    .answer-text{
+      flex: 1 1 auto;
+      white-space: pre-wrap;
+    }
+
     .answer-preview {
       background-color: #e3f2fd;
       padding: 12px 15px;
@@ -282,7 +298,7 @@
 </head>
 <body>
   <div class="header">
-    <div class="header-title">행정안전위원회 향후 회의 쟁점 예측</div>
+    <div class="header-title">뉴스 기반 행안위 안건 후보 브리핑</div>
     <div class="header-controls">
       <div class="search-box">
         <input id="q" type="text" class="search-input" placeholder="키워드/질문/배경으로 검색" />
@@ -316,6 +332,16 @@
       .replaceAll('"','&quot;')
       .replaceAll("'","&#039;");
 
+    const formatTs = (ts) => {
+      const s = String(ts || '').trim();
+      if (!s) return '';
+      // ISO(2026-02-12T14:24:54Z) -> 2026-02-12 14:24
+      const noZ = s.replace(/Z$/,'');
+      const spaced = noZ.replace('T',' ');
+      // yyyy-mm-dd hh:mm:ss -> yyyy-mm-dd hh:mm
+      return spaced.replace(/(\d{4}-\d{2}-\d{2})\s(\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?/, '$1 $2');
+    };
+
     const parseTag = (keyword) => {
       // "[대형 참사] ..." -> "대형 참사"
       const m = String(keyword || '').match(/^\s*\[([^\]]+)\]/);
@@ -327,11 +353,6 @@
       if (qaCount >= 8) return 'red';
       if (qaCount >= 5) return 'orange';
       return 'green';
-    };
-
-    const toStars = (qaCount) => {
-      const n = Math.max(1, Math.min(5, Math.round(qaCount)));
-      return '★'.repeat(n) + '☆'.repeat(5 - n);
     };
 
     // ====== state ======
@@ -406,7 +427,7 @@
       const iconId = 'icon_' + (idx+1);
       const badgeColor = toBadgeColor(x.qa_count || 0);
       const subtitle = x.background_preview || '';
-      const latest = x.latest_at ? String(x.latest_at) : '';
+      const latest = x.latest_at ? formatTs(x.latest_at) : '';
 
       return `
         <div class="issue-card" id="${id}_card">
@@ -414,8 +435,7 @@
             <div class="issue-title-section">
               <div class="issue-meta">
                 <span class="badge ${badgeColor}">Q&A ${esc(x.qa_count || 0)}개</span>
-                <span class="badge gray">최신 ${esc(latest)}</span>
-                <span class="badge blue">빈도 ${esc(toStars(x.qa_count || 0))}</span>
+                <span class="badge gray">${esc(latest)}</span>
               </div>
               <div class="issue-title">${esc(x.keyword)}</div>
               <div class="issue-subtitle">${esc(subtitle)}</div>
@@ -459,21 +479,32 @@
       return rows.map((r, i) => {
         const q = String(r.question || '').trim();
         const a = String(r.answer || '').trim();
-        const preview = a.length > 140 ? (a.slice(0, 140) + '…') : a;
+        const preview = a.length > 180 ? (a.slice(0, 180) + '…') : a;
         const ansId = `ans_${baseIdx}_${i+1}`;
 
         return `
           <div class="qa-item">
             <div class="question">${esc(q || '(질문 없음)')}</div>
+
             <div class="answer-preview">
-              💬 ${esc(preview || '(답변 없음)')}
-              ${a.length > 140 ? `<div class="show-more-btn" onclick="toggleAnswer('${ansId}', event)">자세히 보기 ▼</div>` : ``}
-              <div class="answer-full" id="${ansId}">${esc(a)}</div>
+              <div class="answer-row">
+                <div class="answer-icon">💬</div>
+                <div class="answer-text">${esc(preview || '(답변 없음)')}</div>
+              </div>
+
+              ${a.length > 180 ? `<div class="show-more-btn" onclick="toggleAnswer('${ansId}', event)">자세히 보기 ▼</div>` : ``}
+              <div class="answer-full" id="${ansId}">
+                <div class="answer-row">
+                  <div class="answer-icon">💬</div>
+                  <div class="answer-text">${esc(a)}</div>
+                </div>
+              </div>
             </div>
           </div>
         `;
       }).join('');
     }
+
 
     async function renderDetailInto(issueId, keyword, idx) {
       const body = document.getElementById(issueId);
@@ -488,8 +519,6 @@
 
         const bg = rows[0].background || '';
         const bullets = makeSummaryBullets(bg);
-        const createdAt = rows[0].created_at ? String(rows[0].created_at) : '';
-        const batchId = rows[0].batch_id ? String(rows[0].batch_id) : '';
 
         body.innerHTML = `
           <div class="summary-section">
@@ -498,7 +527,6 @@
               ? `<ul class="summary-list">${bullets.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`
               : `<div class="muted">요약 텍스트가 없습니다.</div>`
             }
-            <div class="muted" style="margin-top:10px;">batch_id: ${esc(batchId)} · created_at: ${esc(createdAt)}</div>
           </div>
 
           <div class="qa-section">

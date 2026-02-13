@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>행정안전위원회 향후 회의 쟁점 예측</title>
+  <style>
+    /* ====== (기존 index.html 스타일을 최대한 유지) ====== */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif;
+      background-color: #f5f7fa;
+      color: #333;
+      padding: 20px;
+    }
+
+    .header {
+      background-color: white;
+      padding: 20px 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 15px;
+    }
+
+    .header-title { font-size: 24px; font-weight: bold; color: #1a1a1a; }
+
+    .header-controls { display: flex; gap: 10px; align-items: center; }
+
+    .search-box { display: flex; gap: 10px; align-items: center; }
+
+    .search-input {
+      padding: 8px 15px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      width: 340px;
+      font-size: 14px;
+    }
+
+    .search-btn {
+      padding: 8px 20px;
+      background-color: #4a90e2;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .search-btn:hover { background-color: #357abd; }
+
+    .content-area { display: flex; gap: 20px; }
+
+    .main-content { flex: 1; }
+
+    .sidebar {
+      width: 280px;
+      background-color: white;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      height: fit-content;
+      position: sticky;
+      top: 20px;
+    }
+
+    .sidebar-title {
+      font-size: 16px;
+      font-weight: bold;
+      margin-bottom: 15px;
+      color: #1a1a1a;
+    }
+
+    .sidebar-item {
+      padding: 10px;
+      margin-bottom: 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background-color 0.2s;
+      border-left: 3px solid #2ed573;
+    }
+    .sidebar-item:hover { background-color: #f0f4f8; }
+
+    .tag-section { margin-top: 25px; }
+
+    .tag {
+      display: inline-block;
+      padding: 5px 12px;
+      background-color: #e8f0fe;
+      color: #1967d2;
+      border-radius: 20px;
+      font-size: 12px;
+      margin: 4px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .tag.active { background-color: #1967d2; color: #fff; }
+
+    .issue-card {
+      background-color: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      margin-bottom: 20px;
+      overflow: hidden;
+      transition: box-shadow 0.3s;
+    }
+    .issue-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
+
+    .issue-header {
+      padding: 20px 25px;
+      border-bottom: 1px solid #e8eaed;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .issue-title-section { flex: 1; min-width: 0; }
+
+    .issue-meta {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      color: white;
+    }
+    .badge.blue { background-color: #4a90e2; }
+    .badge.gray { background-color: #6c757d; }
+    .badge.green { background-color: #2ed573; }
+    .badge.orange { background-color: #ffa502; }
+    .badge.red { background-color: #ff4757; }
+
+    .issue-title {
+      font-size: 18px;
+      font-weight: bold;
+      color: #1a1a1a;
+      margin-bottom: 2px;
+      line-height: 1.35;
+      word-break: keep-all;
+    }
+
+    .issue-subtitle {
+      font-size: 13px;
+      color: #666;
+      line-height: 1.35;
+      margin-top: 6px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .expand-icon {
+      font-size: 20px;
+      color: #666;
+      transition: transform 0.3s;
+      flex: 0 0 auto;
+    }
+    .expand-icon.expanded { transform: rotate(180deg); }
+
+    .issue-body {
+      padding: 0 25px;
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease-in-out;
+    }
+    .issue-body.expanded { max-height: 5000px; padding: 20px 25px; }
+
+    .section-title {
+      font-size: 15px;
+      font-weight: bold;
+      color: #1a1a1a;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section-icon { font-size: 18px; }
+
+    .summary-section { margin-bottom: 25px; }
+
+    .summary-list { list-style: none; padding-left: 0; }
+    .summary-list li {
+      padding: 8px 0 8px 20px;
+      position: relative;
+      color: #555;
+      font-size: 14px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+    }
+    .summary-list li:before {
+      content: "•";
+      position: absolute;
+      left: 5px;
+      color: #4a90e2;
+      font-weight: bold;
+    }
+
+    .qa-section { margin-bottom: 10px; }
+
+    .qa-item {
+      margin-bottom: 18px;
+      border-left: 3px solid #4a90e2;
+      padding-left: 15px;
+    }
+
+    .question {
+      font-size: 15px;
+      font-weight: 600;
+      color: #16a085;
+      margin-bottom: 10px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+
+    .answer-preview {
+      background-color: #e3f2fd;
+      padding: 12px 15px;
+      border-radius: 4px;
+      font-size: 14px;
+      color: #2980b9;
+      line-height: 1.6;
+      position: relative;
+      white-space: pre-wrap;
+    }
+
+    .answer-full {
+      display: none;
+      margin-top: 10px;
+      padding: 15px;
+      background-color: #f0f8ff;
+      border-radius: 4px;
+      font-size: 14px;
+      color: #34495e;
+      line-height: 1.7;
+      white-space: pre-wrap;
+    }
+    .answer-full.show { display: block; }
+
+    .show-more-btn {
+      color: #4a90e2;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      margin-top: 8px;
+      display: inline-block;
+      user-select: none;
+    }
+    .show-more-btn:hover { text-decoration: underline; }
+
+    .muted { color: #888; font-size: 12px; }
+
+    .loading {
+      padding: 18px;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      color: #666;
+      margin-bottom: 18px;
+    }
+
+    @media (max-width: 1200px) {
+      .content-area { flex-direction: column; }
+      .sidebar { width: 100%; position: static; }
+      .search-input { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-title">행정안전위원회 향후 회의 쟁점 예측</div>
+    <div class="header-controls">
+      <div class="search-box">
+        <input id="q" type="text" class="search-input" placeholder="키워드/질문/배경으로 검색" />
+        <button id="btnSearch" class="search-btn">🔍 검색</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="content-area">
+    <div class="main-content">
+      <div id="list" class="loading">데이터를 불러오는 중입니다…</div>
+    </div>
+
+    <div class="sidebar">
+      <div class="sidebar-title">📌 주요 쟁점 목록</div>
+      <div id="sideList" class="muted">불러오는 중…</div>
+
+      <div class="tag-section">
+        <div class="sidebar-title">🏷️ 태그</div>
+        <div id="tags" class="muted">태그 생성 중…</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ====== helpers ======
+    const esc = (s) => String(s ?? '')
+      .replaceAll('&','&amp;')
+      .replaceAll('<','&lt;')
+      .replaceAll('>','&gt;')
+      .replaceAll('"','&quot;')
+      .replaceAll("'","&#039;");
+
+    const parseTag = (keyword) => {
+      // "[대형 참사] ..." -> "대형 참사"
+      const m = String(keyword || '').match(/^\s*\[([^\]]+)\]/);
+      return m ? m[1].trim() : null;
+    };
+
+    const toBadgeColor = (qaCount) => {
+      // 점수/긴급도 데이터가 없으므로 "Q&A 개수"로 시각화(가벼운 파생치)
+      if (qaCount >= 8) return 'red';
+      if (qaCount >= 5) return 'orange';
+      return 'green';
+    };
+
+    const toStars = (qaCount) => {
+      const n = Math.max(1, Math.min(5, Math.round(qaCount)));
+      return '★'.repeat(n) + '☆'.repeat(5 - n);
+    };
+
+    // ====== state ======
+    let ISSUES = [];         // [{keyword, qa_count, latest_at, background_preview}]
+    let ACTIVE_TAG = null;   // string or null
+    let LAST_QUERY = '';
+
+    // ====== fetch ======
+    async function fetchIssues(q='') {
+      const url = new URL('/api/news/issues', location.origin);
+      if (q) url.searchParams.set('q', q);
+      const r = await fetch(url.toString());
+      if (!r.ok) throw new Error(await r.text());
+      return await r.json();
+    }
+
+    async function fetchIssueDetail(keyword) {
+      const url = new URL('/api/news/issue', location.origin);
+      url.searchParams.set('keyword', keyword);
+      const r = await fetch(url.toString());
+      if (!r.ok) throw new Error(await r.text());
+      return await r.json();
+    }
+
+    // ====== render ======
+    function renderSidebar(issues) {
+      const top = issues.slice(0, 12);
+      const side = document.getElementById('sideList');
+      if (!top.length) {
+        side.innerHTML = '<div class="muted">표시할 항목이 없습니다.</div>';
+        return;
+      }
+      side.innerHTML = top.map((x, i) => {
+        const id = 'issue_' + (i+1);
+        return `
+          <div class="sidebar-item" onclick="scrollToIssue('${id}')">
+            ${i+1}. ${esc(x.keyword)}
+          </div>`;
+      }).join('');
+    }
+
+    function renderTags(issues) {
+      const tagsEl = document.getElementById('tags');
+      const tags = {};
+      for (const it of issues) {
+        const t = parseTag(it.keyword);
+        if (t) tags[t] = (tags[t] || 0) + 1;
+      }
+      const tagList = Object.entries(tags)
+        .sort((a,b)=> b[1]-a[1] || a[0].localeCompare(b[0]))
+        .slice(0, 20);
+
+      if (!tagList.length) {
+        tagsEl.innerHTML = '<div class="muted">태그가 없습니다.</div>';
+        return;
+      }
+
+      const pill = (t, c) => `
+        <span class="tag ${ACTIVE_TAG===t ? 'active' : ''}" onclick="toggleTag('${esc(t)}')">
+          #${esc(t)} <span style="opacity:.75">(${c})</span>
+        </span>`;
+      tagsEl.innerHTML = `
+        <div style="margin-bottom:8px;">
+          <span class="tag ${ACTIVE_TAG===null ? 'active' : ''}" onclick="toggleTag('__ALL__')">전체</span>
+        </div>
+        ${tagList.map(([t,c])=>pill(t,c)).join('')}
+      `;
+    }
+
+    function issueCardHTML(x, idx) {
+      const id = 'issue_' + (idx+1);
+      const iconId = 'icon_' + (idx+1);
+      const badgeColor = toBadgeColor(x.qa_count || 0);
+      const subtitle = x.background_preview || '';
+      const latest = x.latest_at ? String(x.latest_at) : '';
+
+      return `
+        <div class="issue-card" id="${id}_card">
+          <div class="issue-header" onclick="toggleIssue('${id}', '${esc(x.keyword)}', ${idx+1})">
+            <div class="issue-title-section">
+              <div class="issue-meta">
+                <span class="badge ${badgeColor}">Q&A ${esc(x.qa_count || 0)}개</span>
+                <span class="badge gray">최신 ${esc(latest)}</span>
+                <span class="badge blue">빈도 ${esc(toStars(x.qa_count || 0))}</span>
+              </div>
+              <div class="issue-title">${esc(x.keyword)}</div>
+              <div class="issue-subtitle">${esc(subtitle)}</div>
+            </div>
+            <div class="expand-icon" id="${iconId}">▼</div>
+          </div>
+          <div class="issue-body" id="${id}">
+            <div class="loading">상세 내용을 불러오는 중입니다…</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderMain(issues) {
+      const list = document.getElementById('list');
+      if (!issues.length) {
+        list.className = '';
+        list.innerHTML = `<div class="loading">검색 결과가 없습니다.</div>`;
+        return;
+      }
+      list.className = '';
+      list.innerHTML = issues.map(issueCardHTML).join('');
+    }
+
+    function makeSummaryBullets(background) {
+      const s = String(background || '').trim();
+      if (!s) return [];
+      // 줄 단위로 "- "가 있으면 그것을 우선 사용
+      const lines = s.split('\n').map(x=>x.trim()).filter(Boolean);
+      const bullets = [];
+      for (const ln of lines) {
+        const cleaned = ln.replace(/^\-\s*/, '').trim();
+        if (cleaned) bullets.push(cleaned);
+      }
+      // 너무 길면 앞부분만
+      return bullets.slice(0, 12);
+    }
+
+    function qaHTML(rows, baseIdx) {
+      // rows: [{question,answer,background,created_at,...}]
+      return rows.map((r, i) => {
+        const q = String(r.question || '').trim();
+        const a = String(r.answer || '').trim();
+        const preview = a.length > 140 ? (a.slice(0, 140) + '…') : a;
+        const ansId = `ans_${baseIdx}_${i+1}`;
+
+        return `
+          <div class="qa-item">
+            <div class="question">${esc(q || '(질문 없음)')}</div>
+            <div class="answer-preview">
+              💬 ${esc(preview || '(답변 없음)')}
+              ${a.length > 140 ? `<div class="show-more-btn" onclick="toggleAnswer('${ansId}', event)">자세히 보기 ▼</div>` : ``}
+              <div class="answer-full" id="${ansId}">${esc(a)}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function renderDetailInto(issueId, keyword, idx) {
+      const body = document.getElementById(issueId);
+      if (!body) return;
+
+      try {
+        const rows = await fetchIssueDetail(keyword);
+        if (!rows.length) {
+          body.innerHTML = `<div class="muted">상세 데이터가 없습니다.</div>`;
+          return;
+        }
+
+        const bg = rows[0].background || '';
+        const bullets = makeSummaryBullets(bg);
+        const createdAt = rows[0].created_at ? String(rows[0].created_at) : '';
+        const batchId = rows[0].batch_id ? String(rows[0].batch_id) : '';
+
+        body.innerHTML = `
+          <div class="summary-section">
+            <div class="section-title"><span class="section-icon">💡</span> 쟁점 요약</div>
+            ${bullets.length
+              ? `<ul class="summary-list">${bullets.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`
+              : `<div class="muted">요약 텍스트가 없습니다.</div>`
+            }
+            <div class="muted" style="margin-top:10px;">batch_id: ${esc(batchId)} · created_at: ${esc(createdAt)}</div>
+          </div>
+
+          <div class="qa-section">
+            <div class="section-title"><span class="section-icon">❓</span> 예상 질의 및 답변</div>
+            ${qaHTML(rows, idx)}
+          </div>
+        `;
+      } catch (e) {
+        body.innerHTML = `<div class="muted">상세 로딩 실패: ${esc(e.message || e)}</div>`;
+      }
+    }
+
+    // ====== interactions ======
+    function toggleIssue(issueId, keyword, idx) {
+      const body = document.getElementById(issueId);
+      const icon = document.getElementById('icon_' + idx);
+      if (!body || !icon) return;
+
+      const isExpanded = body.classList.contains('expanded');
+      if (isExpanded) {
+        body.classList.remove('expanded');
+        icon.classList.remove('expanded');
+        return;
+      }
+      body.classList.add('expanded');
+      icon.classList.add('expanded');
+
+      // 아직 상세를 로딩하지 않았다면 로딩
+      if (body.dataset.loaded !== '1') {
+        body.dataset.loaded = '1';
+        renderDetailInto(issueId, keyword, idx);
+      }
+    }
+
+    function toggleAnswer(id, ev) {
+      if (ev) ev.stopPropagation();
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.toggle('show');
+    }
+
+    function scrollToIssue(issueId) {
+      const card = document.getElementById(issueId + '_card');
+      if (!card) return;
+      card.scrollIntoView({behavior:'smooth', block:'start'});
+      // 자동으로 펼치기
+      const body = document.getElementById(issueId);
+      if (body && !body.classList.contains('expanded')) {
+        // keyword는 DOM에서 다시 뽑음
+        const title = card.querySelector('.issue-title');
+        const keyword = title ? title.textContent : '';
+        const idx = Number(issueId.split('_')[1] || '1');
+        toggleIssue(issueId, keyword, idx);
+      }
+    }
+
+    function toggleTag(tag) {
+      if (tag === '__ALL__') ACTIVE_TAG = null;
+      else ACTIVE_TAG = (ACTIVE_TAG === tag ? null : tag);
+      applyFiltersAndRender();
+    }
+
+    function applyFiltersAndRender() {
+      let items = ISSUES.slice();
+
+      if (ACTIVE_TAG) {
+        items = items.filter(x => parseTag(x.keyword) === ACTIVE_TAG);
+      }
+
+      renderMain(items);
+      renderSidebar(items);
+      renderTags(ISSUES); // 태그는 전체 기준(의도적으로 고정)
+    }
+
+    async function init() {
+      const input = document.getElementById('q');
+      const btn = document.getElementById('btnSearch');
+
+      const runSearch = async () => {
+        const q = (input.value || '').trim();
+        LAST_QUERY = q;
+        document.getElementById('list').className = 'loading';
+        document.getElementById('list').innerText = '데이터를 불러오는 중입니다…';
+        try {
+          const issues = await fetchIssues(q);
+          // 최신순 정렬(백엔드에서 정렬되어 오지만 안전)
+          issues.sort((a,b) => String(b.latest_at||'').localeCompare(String(a.latest_at||'')));
+          ISSUES = issues;
+          ACTIVE_TAG = null;
+          applyFiltersAndRender();
+        } catch (e) {
+          const list = document.getElementById('list');
+          list.className = '';
+          list.innerHTML = `<div class="loading">로딩 실패: ${esc(e.message || e)}</div>`;
+        }
+      };
+
+      btn.addEventListener('click', runSearch);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') runSearch();
+      });
+
+      await runSearch();
+    }
+
+    init();
+  </script>
+</body>
+</html>

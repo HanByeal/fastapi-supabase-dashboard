@@ -1,11 +1,13 @@
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
+from routers.news import router as news_router
+
 
 load_dotenv()
 
@@ -14,8 +16,11 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY") or ""
 
 app = FastAPI(title="FastAPI + Supabase Dashboard (Single DB)")
 
+app.include_router(news_router)
+
 TABLES = {
-    "trend": "trend",
+    "trend": "trend",  # (구) 유지
+    "trend2": "trend2",  # ✅ 신 트렌드
     "party_domain_metrics": "party_domain_metrics",
     "text_recap": "text_recap",
     "people_recap": "people_recap",
@@ -42,7 +47,7 @@ async def sb_select(table: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
             detail="SUPABASE_URL / SUPABASE_KEY 가 설정되지 않았습니다. (.env 또는 run.cmd 확인)",
         )
     url = f"{SUPABASE_URL}/rest/v1/{table}"
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         r = await client.get(url, headers=_headers(), params=params)
     if r.status_code >= 400:
         raise HTTPException(status_code=r.status_code, detail=r.text)
@@ -61,13 +66,56 @@ def parse_session_no(s: Any) -> Optional[int]:
 
 
 # =========================
-# API
+# ✅ 대수-회차 범위 (필요 시 고급옵션에서만 사용)
 # =========================
-@app.get("/api/trend")
-async def api_trend(limit: int = 5000, offset: int = 0):
-    return await sb_select(TABLES["trend"], {"select": "*", "limit": limit, "offset": offset})
+ASSEMBLY_SESSION_RANGES = {
+    20: (353, 378),
+    21: (379, 414),
+    22: (415, 10**9),
+}
 
 
+def _parse_int_list(values: Optional[str]) -> List[int]:
+    if not values:
+        return []
+    out: List[int] = []
+    for x in str(values).split(","):
+        x = x.strip()
+        if not x:
+            continue
+        try:
+            out.append(int(x))
+        except:
+            pass
+    return out
+
+
+def _quarter_ordinal(y: int, q: int) -> int:
+    # ✅ 분기 순서 정렬/비교용 (연도 단위로 강한 증가)
+    return int(y) * 4 + int(q)
+
+
+def _in_ordinal_range(y: int, q: int, start_ord: int, end_ord: int) -> bool:
+    o = _quarter_ordinal(y, q)
+    return start_ord <= o <= end_ord
+
+
+def _build_postgrest_or_for_assemblies(assemblies: List[int]) -> Optional[str]:
+    # postgrest or=(and(session.gte.353,session.lte.378),and(...))
+    parts = []
+    for a in assemblies:
+        if a not in ASSEMBLY_SESSION_RANGES:
+            continue
+        lo, hi = ASSEMBLY_SESSION_RANGES[a]
+        parts.append(f"and(session.gte.{lo},session.lte.{hi})")
+    if not parts:
+        return None
+    return "(" + ",".join(parts) + ")"
+
+
+# =========================
+# API (기존)
+# =========================
 @app.get("/api/party-domain-metrics")
 async def api_party_domain_metrics(limit: int = 5000, offset: int = 0):
     return await sb_select(TABLES["party_domain_metrics"], {"select": "*", "limit": limit, "offset": offset})
@@ -137,14 +185,177 @@ async def api_law_stats_session(limit: int = 5000, offset: int = 0):
 async def api_questions_stats_session(
     session_no: Optional[int] = Query(None),
     limit: int = 5000,
-    offset: int = 0
+    offset: int = 0,
 ):
     params = {"select": "*", "limit": limit, "offset": offset}
     if session_no is not None:
-        # DB 컬럼이 session_no(숫자)라면 그대로 eq 필터
         params["session_no"] = f"eq.{session_no}"
-
     return await sb_select(TABLES["question_stats_session_rows"], params)
+
+
+# =========================
+# ✅ trend2 API
+# =========================
+@app.get("/api/trend2/options")
+async def api_trend2_options():
+    """
+    UI 초기 구성용:
+    - year/quarter 범위
+    - L2 목록
+    """
+    # ✅ 가능한 넉넉히 가져오기 (연도 드롭다운 끊김 방지)
+    rows_ym = await sb_select(
+        TABLES["trend2"],
+        {"select": "year,quarter", "order": "year.asc,quarter.asc", "limit": 50000, "offset": 0},
+    )
+
+    yq: List[Tuple[int, int]] = []
+    for r in rows_ym:
+        y = r.get("year")
+        q = r.get("quarter")
+        if isinstance(y, int) and isinstance(q, int) and 1 <= q <= 4:
+            yq.append((y, q))
+
+    if not yq:
+        return {"years": [], "min": None, "max": None, "l2": []}
+
+    min_yq = min(yq, key=lambda t: _quarter_ordinal(t[0], t[1]))
+    max_yq = max(yq, key=lambda t: _quarter_ordinal(t[0], t[1]))
+
+    rows_l2 = await sb_select(TABLES["trend2"], {"select": "label_l2", "limit": 50000, "offset": 0})
+    l2 = sorted({(r.get("label_l2") or "").strip() for r in rows_l2 if (r.get("label_l2") or "").strip()})
+
+    years = sorted({y for (y, _) in yq})
+
+    return {
+        "years": years,
+        "min": {"year": min_yq[0], "quarter": min_yq[1]},
+        "max": {"year": max_yq[0], "quarter": max_yq[1]},
+        "l2": l2,
+    }
+
+
+@app.get("/api/trend2/options/l3")
+async def api_trend2_l3_options(label_l2: str = Query(..., description="상위 L2 1개")):
+    l2 = (label_l2 or "").strip()
+    if not l2:
+        return []
+    rows = await sb_select(
+        TABLES["trend2"],
+        {"select": "label_l3", "label_l2": f"eq.{l2}", "limit": 50000, "offset": 0},
+    )
+    l3 = sorted({(r.get("label_l3") or "").strip() for r in rows if (r.get("label_l3") or "").strip()})
+    return l3
+
+
+@app.get("/api/trend2/series")
+async def api_trend2_series(
+    # ✅ 고급옵션: assemblies는 선택적으로만 사용
+    assemblies: Optional[str] = Query(None, description="예: 20,21,22 (멀티) / 비우면 전체"),
+    group_by: str = Query("l2", description="l2 또는 l3"),
+    # 기간: 시작/끝 (또는 recent_n_quarters)
+    start_year: Optional[int] = None,
+    start_quarter: Optional[int] = None,
+    end_year: Optional[int] = None,
+    end_quarter: Optional[int] = None,
+    recent_n_quarters: Optional[int] = Query(None, description="예: 8 (최근 8분기)"),
+    # 카테고리 필터
+    l2_in: Optional[str] = Query(None, description="L2 멀티: A,B,C"),
+    l2_eq: Optional[str] = Query(None, description="L3 그룹일 때 상위 L2 1개"),
+    l3_in: Optional[str] = Query(None, description="L3 멀티: a,b,c"),
+    # 안전장치
+    limit: int = 50000,
+):
+    """
+    반환: [{period:"2025-Q1", label:"...", count: N}, ...]
+    """
+    g = (group_by or "l2").strip().lower()
+    if g not in ("l2", "l3"):
+        raise HTTPException(status_code=400, detail="group_by는 l2 또는 l3만 허용")
+
+    # 1) assemblies -> session 범위 필터(or) (고급옵션일 때만)
+    assemblies_list = _parse_int_list(assemblies)
+    or_param = _build_postgrest_or_for_assemblies(assemblies_list)
+
+    # 2) 기간 결정
+    opts = await api_trend2_options()
+    maxp = opts.get("max")
+    minp = opts.get("min")
+    if not maxp or not minp:
+        return []
+
+    max_ord = _quarter_ordinal(maxp["year"], maxp["quarter"])
+    min_ord = _quarter_ordinal(minp["year"], minp["quarter"])
+
+    if recent_n_quarters and recent_n_quarters > 0:
+        end_ord = max_ord
+        start_ord = max_ord - int(recent_n_quarters) + 1
+        if start_ord < min_ord:
+            start_ord = min_ord
+    else:
+        sy = start_year if start_year is not None else minp["year"]
+        sq = start_quarter if start_quarter is not None else minp["quarter"]
+        ey = end_year if end_year is not None else maxp["year"]
+        eq = end_quarter if end_quarter is not None else maxp["quarter"]
+        if not (1 <= int(sq) <= 4 and 1 <= int(eq) <= 4):
+            raise HTTPException(status_code=400, detail="quarter는 1~4")
+        start_ord = _quarter_ordinal(int(sy), int(sq))
+        end_ord = _quarter_ordinal(int(ey), int(eq))
+        if start_ord > end_ord:
+            start_ord, end_ord = end_ord, start_ord
+
+    # ✅ 연도 범위를 서버에서 먼저 컷 (and=(year.gte.X,year.lte.Y))
+    start_y = start_ord // 4  # ord = y*4+q → //4는 y로 돌아감(원리상 OK)
+    end_y = end_ord // 4
+
+    params: Dict[str, Any] = {
+        "select": "year,quarter,session,label_l2,label_l3",
+        "limit": min(max(limit, 1000), 50000),
+        "offset": 0,
+        "and": f"(year.gte.{start_y},year.lte.{end_y})",
+    }
+
+    if or_param:
+        params["or"] = or_param
+
+    # 카테고리 필터(서버에서 먼저)
+    if g == "l2":
+        if l2_in:
+            l2_list = [x.strip() for x in l2_in.split(",") if x.strip()]
+            if l2_list:
+                params["label_l2"] = "in.(" + ",".join([f'"{x}"' for x in l2_list]) + ")"
+    else:
+        if l2_eq:
+            params["label_l2"] = f"eq.{l2_eq.strip()}"
+        if l3_in:
+            l3_list = [x.strip() for x in l3_in.split(",") if x.strip()]
+            if l3_list:
+                params["label_l3"] = "in.(" + ",".join([f'"{x}"' for x in l3_list]) + ")"
+
+    rows = await sb_select(TABLES["trend2"], params)
+
+    # 4) python에서 분기까지 최종 필터 + 집계
+    agg: Dict[Tuple[str, str], int] = {}
+    for r in rows:
+        y = r.get("year")
+        q = r.get("quarter")
+        if not (isinstance(y, int) and isinstance(q, int) and 1 <= q <= 4):
+            continue
+        if not _in_ordinal_range(y, q, start_ord, end_ord):
+            continue
+
+        if g == "l2":
+            label = (r.get("label_l2") or "").strip() or "미분류"
+        else:
+            label = (r.get("label_l3") or "").strip() or "미분류"
+
+        period = f"{y}-Q{q}"
+        key = (period, label)
+        agg[key] = agg.get(key, 0) + 1
+
+    out = [{"period": p, "label": lab, "count": cnt} for (p, lab), cnt in agg.items()]
+    out.sort(key=lambda x: (x["period"], -x["count"], x["label"]))
+    return out
 
 
 # =========================
@@ -207,14 +418,12 @@ HTML_PAGE = r"""
     th, td { border: 1px solid #ddd; padding: 7px 9px; font-size: 13px; vertical-align: top; word-wrap: break-word; }
     th { background: #fafafa; }
 
-    /* people/data 카드 */
     .req-card { background:white; border-radius:12px; padding:12px 14px; margin-bottom:10px; border:1px solid #eee; }
     .req-name { font-weight:900; font-size:15px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
     .req-target { margin-top:4px; color:#666; font-size:13px; }
     .req-body { margin-top:8px; color:#222; white-space: pre-wrap; line-height:1.45; }
     .badge { display:inline-flex; align-items:center; padding:3px 9px; border-radius:999px; border:1px solid #ddd; font-size:12px; color:#333; background:#f4f4f4; font-weight:800; }
 
-    /* ✅ 회의요약(텍스트) UI */
     .recapBox { border:1px solid #eee; border-radius:14px; padding:14px; background:#fff; }
     .recapSection { margin-top:12px; }
     .secTitle { font-weight:900; font-size:13px; margin-bottom:8px; }
@@ -222,7 +431,6 @@ HTML_PAGE = r"""
     .bulletList li { margin:4px 0; line-height:1.35; }
     .summaryText { white-space: pre-wrap; line-height:1.55; color:#222; padding-left: 2px; }
 
-    /* ✅ 회의요약 상단: [주요안건 | 키워드(워드클라우드)] */
     .textGrid{
       display:grid;
       grid-template-columns: 3fr 2fr;
@@ -242,7 +450,6 @@ HTML_PAGE = r"""
       background:#fbfbfb;
     }
 
-    /* ✅ 더보기(people/data용) */
     .moreBtn{
       margin-top: 10px;
       padding: 8px 12px;
@@ -261,7 +468,6 @@ HTML_PAGE = r"""
       .kwCloud{ height: 220px; }
     }
 
-    /* ✅ select 옆 로딩 표시 */
     .cardLoading{
       display:inline-flex;
       align-items:center;
@@ -289,6 +495,55 @@ HTML_PAGE = r"""
       flex: 0 0 auto;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ✅ 트렌드 필터 UI */
+    .trendControls{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+    .radioWrap{
+      display:inline-flex;
+      gap:8px;
+      align-items:center;
+      padding:6px 10px;
+      border:1px solid #e5e7eb;
+      border-radius:12px;
+      background:#fff;
+      font-weight:900;
+      font-size:12px;
+      color:#334155;
+    }
+    .hint{ font-size:12px; color:#64748b; font-weight:800; }
+
+    .applyBtn{
+      padding: 8px 12px;
+      border-radius: 12px;
+      border: 1px solid #ddd;
+      background: #111;
+      color: #fff;
+      cursor: pointer;
+      font-weight: 900;
+      font-size: 13px;
+    }
+    .applyBtn:disabled{
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .advWrap{
+      display:inline-flex;
+      gap:8px;
+      align-items:center;
+      padding:6px 10px;
+      border:1px solid #e5e7eb;
+      border-radius:12px;
+      background:#fff;
+      font-weight:900;
+      font-size:12px;
+      color:#334155;
+    }
   </style>
 </head>
 
@@ -303,7 +558,6 @@ HTML_PAGE = r"""
         <div class="titleRow">
           <span class="badgeTitle">회차별 회의록 분석</span>
 
-          <!-- ✅ 대수 선택 -->
           <div class="selectWrap">
             <span class="selectLabel">대수</span>
             <select id="assemblySel"></select>
@@ -314,7 +568,6 @@ HTML_PAGE = r"""
             <select id="sessionSel"></select>
           </div>
 
-          <!-- ✅ 로딩 표시(셀렉트 바로 옆) -->
           <span id="loadingRecap" class="cardLoading" style="display:none;">
             <span class="miniSpin"></span> 로딩 중…
           </span>
@@ -358,7 +611,6 @@ HTML_PAGE = r"""
             <select id="qSessionSel"></select>
           </div>
 
-          <!-- ✅ 로딩 표시(셀렉트 바로 옆) -->
           <span id="loadingQ" class="cardLoading" style="display:none;">
             <span class="miniSpin"></span> 로딩 중…
           </span>
@@ -383,9 +635,102 @@ HTML_PAGE = r"""
 
     <!-- 4) 트렌드 / 정당별 -->
     <div class="card">
-      <div class="cardhead">
-        <h3>주요 트렌드 · 정당별 관심</h3>
+      <div class="cardhead" style="align-items:flex-start;">
+        <div style="display:flex;flex-direction:column;gap:10px; width:100%;">
+          <div class="titleRow" style="justify-content:space-between; width:100%;">
+            <h3>주요 트렌드 · 정당별 관심</h3>
+
+            <div style="display:flex; gap:10px; align-items:center;">
+              <button id="trendApply" class="applyBtn" disabled>적용</button>
+              <span id="loadingTrend" class="cardLoading" style="display:none;">
+                <span class="miniSpin"></span> 로딩 중…
+              </span>
+            </div>
+          </div>
+
+          <!-- ✅ 기간 중심 UI (대수는 고급옵션으로 내림) -->
+          <div class="trendControls">
+            <!-- 기간 프리셋 -->
+            <div class="selectWrap">
+              <span class="selectLabel">기간</span>
+              <select id="trendPreset" style="min-width:140px;">
+                <option value="recent_4">최근 4분기</option>
+                <option value="recent_8" selected>최근 8분기</option>
+                <option value="recent_12">최근 12분기</option>
+                <option value="custom">직접 선택</option>
+              </select>
+            </div>
+
+            <!-- 직접 선택(연도/분기) -->
+            <div class="selectWrap">
+              <span class="selectLabel">시작</span>
+              <select id="trendStartY"></select>
+              <select id="trendStartQ">
+                <option value="1">Q1</option><option value="2">Q2</option><option value="3">Q3</option><option value="4">Q4</option>
+              </select>
+            </div>
+
+            <div class="selectWrap">
+              <span class="selectLabel">끝</span>
+              <select id="trendEndY"></select>
+              <select id="trendEndQ">
+                <option value="1">Q1</option><option value="2">Q2</option><option value="3">Q3</option><option value="4">Q4</option>
+              </select>
+            </div>
+
+            <!-- ✅ 그룹(라벨 변경 + 줄 아래로 자연스럽게 배치되게) -->
+            <div class="radioWrap" style="margin-left: 0;">
+              <span>그룹</span>
+              <label style="display:inline-flex;gap:6px;align-items:center;">
+                <input type="radio" name="trendGroup" value="l2" checked />
+                대분류
+              </label>
+              <label style="display:inline-flex;gap:6px;align-items:center;">
+                <input type="radio" name="trendGroup" value="l3" />
+                소분류
+              </label>
+            </div>
+
+            <!-- 카테고리: L2 멀티 -->
+            <div class="selectWrap" id="wrapL2Multi">
+              <span class="selectLabel">대분류</span>
+              <select id="trendL2Multi" multiple size="1" style="min-width:220px;"></select>
+              <span class="hint">멀티</span>
+            </div>
+
+            <!-- 카테고리: L3일 때 (상위 L2 1개 + L3 멀티) -->
+            <div class="selectWrap" id="wrapL2One" style="display:none;">
+              <span class="selectLabel">상위 대분류</span>
+              <select id="trendL2One" style="min-width:220px;"></select>
+            </div>
+
+            <div class="selectWrap" id="wrapL3Multi" style="display:none;">
+              <span class="selectLabel">소분류</span>
+              <select id="trendL3Multi" multiple size="1" style="min-width:260px;"></select>
+              <span class="hint">멀티</span>
+            </div>
+
+            <!-- ✅ 고급옵션: 대수 제한 -->
+            <div class="advWrap">
+              <label style="display:inline-flex;gap:8px;align-items:center; cursor:pointer;">
+                <input type="checkbox" id="trendUseAssembly" />
+                대수로 제한(고급)
+              </label>
+            </div>
+
+            <div class="selectWrap" id="wrapAssembly" style="display:none;">
+              <span class="selectLabel">대수</span>
+              <select id="trendAssembly" multiple size="1" style="min-width:140px;">
+                <option value="20">20대</option>
+                <option value="21">21대</option>
+                <option value="22" selected>22대</option>
+              </select>
+              <span class="hint">Ctrl/Shift 멀티</span>
+            </div>
+          </div>
+        </div>
       </div>
+
       <div class="row2">
         <div id="plot_trend" class="plot"></div>
         <div id="plot_party" class="plot"></div>
@@ -401,31 +746,28 @@ HTML_PAGE = r"""
 const state = {
   tab: "text",
 
-  // ✅ 대수/회차 (상단)
   assemblyNo: null,
   allSessions: [],
   sessionNo: null,
 
-  // ✅ 대수/회차 (질의의원)
   qAssemblyNo: null,
   qSessionNo: null,
 
-  // people/data는 더보기 방식
   more: { people: 20, data: 20 },
   shown: { people: 20, data: 20 },
 
-  // filter
-  party: "",   // "" = 전체
+  party: "",
   q: "",
 
-  // last fetched rows for current tab
   lastRows: [],
-
-  // for wordcloud
   __pendingWordcloud: [],
-
-  // ✅ 질문 원본 캐시(한번만 받아서 재사용)
   qRawRows: null,
+
+  // ✅ trend2 options cache
+  trend2Options: null,
+
+  // ✅ 트렌드: 적용 버튼 방식(변경 시 dirty)
+  trendDirty: false,
 };
 
 function uniq(arr){ return [...new Set(arr)]; }
@@ -440,7 +782,6 @@ function setErr(divId, msg){
   document.getElementById(divId).innerHTML = `<div class="err">${msg}</div>`;
 }
 
-/* ✅ 여러 키 중 첫 값 선택 */
 function pickFirst(obj, keys){
   for (const k of keys){
     if (obj && obj[k] != null){
@@ -462,16 +803,19 @@ function normStr(x){
 }
 
 /* =========================
-   ✅ 로딩 표시(셀렉트 옆)
+   ✅ 로딩 표시
    ========================= */
 function setLoading(which, on){
-  const id = (which === "recap") ? "loadingRecap" : "loadingQ";
-  const el = document.getElementById(id);
+  const map = {
+    recap: "loadingRecap",
+    q: "loadingQ",
+    trend: "loadingTrend",
+  };
+  const el = document.getElementById(map[which]);
   if (!el) return;
   el.style.display = on ? "inline-flex" : "none";
 }
 
-/* “동시에 갱신 + 기존 화면 유지 + 로딩만” */
 async function refreshBoth(){
   setLoading("recap", true);
   setLoading("q", true);
@@ -484,10 +828,7 @@ async function refreshBoth(){
 }
 
 /* =========================
-   ✅ 대수 매핑(하드코딩)
-   - 353~378: 20대
-   - 379~414: 21대
-   - 415~ : 22대
+   대수 매핑(프론트)
    ========================= */
 function getAssemblyBySession(n){
   const x = Number(n);
@@ -504,7 +845,6 @@ function initAssemblyOptions(selId){
   sel.innerHTML = "";
   [20, 21, 22].forEach(a => sel.appendChild(new Option(`${a}대`, String(a))));
 }
-
 function session_label(n){ return `${n}회`; }
 
 /* 상단: 대수에 맞춰 회차 렌더 */
@@ -522,10 +862,7 @@ function renderSessionOptions(){
   }
 
   for (const s of filtered){
-    const opt = document.createElement("option");
-    opt.value = String(s);
-    opt.textContent = session_label(s);
-    sessionSel.appendChild(opt);
+    sessionSel.appendChild(new Option(session_label(s), String(s)));
   }
 
   const wanted = Number(state.sessionNo);
@@ -553,10 +890,7 @@ function renderQSessionOptions(){
   }
 
   for (const s of filtered){
-    const opt = document.createElement("option");
-    opt.value = String(s);
-    opt.textContent = session_label(s);
-    sel.appendChild(opt);
+    sel.appendChild(new Option(session_label(s), String(s)));
   }
 
   const wanted = Number(state.qSessionNo);
@@ -569,9 +903,7 @@ function renderQSessionOptions(){
   }
 }
 
-/* =========================
-   ✅ 상단 ↔ 하단 양방향 연동(무한루프 방지)
-   ========================= */
+/* 상단 ↔ 하단 동기화 */
 let __syncLock = false;
 
 function syncTopToQ(){
@@ -581,13 +913,9 @@ function syncTopToQ(){
     state.qAssemblyNo = state.assemblyNo;
     state.qSessionNo = state.sessionNo;
 
-    const qAssemblySel = document.getElementById("qAssemblySel");
-    if (qAssemblySel) qAssemblySel.value = String(state.qAssemblyNo);
-
+    document.getElementById("qAssemblySel").value = String(state.qAssemblyNo);
     renderQSessionOptions();
-
-    const qSessionSel = document.getElementById("qSessionSel");
-    if (qSessionSel && state.qSessionNo) qSessionSel.value = String(state.qSessionNo);
+    if (state.qSessionNo) document.getElementById("qSessionSel").value = String(state.qSessionNo);
   } finally {
     __syncLock = false;
   }
@@ -600,20 +928,16 @@ function syncQToTop(){
     state.assemblyNo = state.qAssemblyNo;
     state.sessionNo = state.qSessionNo;
 
-    const assemblySel = document.getElementById("assemblySel");
-    if (assemblySel) assemblySel.value = String(state.assemblyNo);
-
+    document.getElementById("assemblySel").value = String(state.assemblyNo);
     renderSessionOptions();
-
-    const sessionSel = document.getElementById("sessionSel");
-    if (sessionSel && state.sessionNo) sessionSel.value = String(state.sessionNo);
+    if (state.sessionNo) document.getElementById("sessionSel").value = String(state.sessionNo);
   } finally {
     __syncLock = false;
   }
 }
 
 /* =========================
-   정당 색상(현재 최신본 그대로)
+   정당 색상
    ========================= */
 function partyColor(party){
   const p = (party || "").trim();
@@ -631,13 +955,11 @@ function partyColor(party){
     ["국민의힘", "#E61E2B"],
     ["기본소득당", "#00D2C3"],
     ["조국혁신당", "#0073CF"],
-
     ["미래통합당", "#EF426F"],
     ["미래한국당", "#B4065F"],
     ["정의당", "#FFED00"],
     ["더불어시민당", "#006CB7"],
     ["열린민주당", OPEN],
-
     ["새누리당", "#C9252B"],
     ["국민의당", "#006241"],
     ["무소속", "#9ca3af"],
@@ -670,39 +992,8 @@ function textColorForBg(hex){
   return luminance > 0.6 ? "#111" : "#fff";
 }
 
-/* ✅ tab별 공통 필드 추출 */
-function getParty(r, tab){
-  if (tab === "people"){
-    return normStr(pickFirst(r, ["정당","party","소속정당","요구자정당"])) || "";
-  }
-  if (tab === "data"){
-    return normStr(pickFirst(r, ["정당","party","요구자정당","소속정당"])) || "";
-  }
-  return "";
-}
-
-function getSpeaker(r){
-  return normStr(pickFirst(r, ["발언자명","의원명","발언자","speaker_name","speaker"])) || "";
-}
-
-function getPeopleBody(r){
-  return normStr(pickFirst(r, ["발언요약","발화내용 요약","요약","summary","text","본문"])) || "";
-}
-
-function getDataName(r){
-  return normStr(pickFirst(r, ["요구자명","요구자","요청 의원","requester","speaker_name"])) || "";
-}
-
-function getDataTarget(r){
-  return normStr(pickFirst(r, ["대상","대상 기관","target","기관","부처"])) || "";
-}
-
-function getDataReq(r){
-  return normStr(pickFirst(r, ["실제요구자료","요구자료","요구내용","request","text","본문"])) || "";
-}
-
 /* =========================
-   1) 회차 초기화 (✅ 상단/하단 같이 세팅)
+   회차 초기화
    ========================= */
 async function initSessions(){
   initAssemblyOptions("assemblySel");
@@ -729,8 +1020,7 @@ async function initSessions(){
   state.assemblyNo = baseAssembly;
   state.sessionNo = maxS;
 
-  const assemblySel = document.getElementById("assemblySel");
-  assemblySel.value = String(state.assemblyNo);
+  document.getElementById("assemblySel").value = String(state.assemblyNo);
   renderSessionOptions();
   state.sessionNo = Number(document.getElementById("sessionSel").value) || null;
 
@@ -742,21 +1032,19 @@ async function initSessions(){
 }
 
 /* =========================
-   2) 회의요약 + WordCloud
+   회의요약 + WordCloud (기존 그대로)
    ========================= */
 function splitAgenda(text){
   const t = (text || "").replace(/\s+/g, " ").trim();
   if (!t) return [];
   return t.split(";").map(x => x.trim()).filter(Boolean);
 }
-
 function safeParseJSON(s){
   if (!s) return null;
   if (typeof s === "object") return s;
   if (typeof s !== "string") return null;
   try { return JSON.parse(s); } catch(e){ return null; }
 }
-
 function buildKeywordsFromRow(row){
   const raw = safeParseJSON(row["키워드_RAW_JSON"]);
   if (Array.isArray(raw) && raw.length){
@@ -770,7 +1058,6 @@ function buildKeywordsFromRow(row){
       .filter(x => x.text && Number.isFinite(x.weight) && x.weight > 0);
     if (arr.length) return arr;
   }
-
   const mp = safeParseJSON(row["키워드_가중치맵"]);
   if (mp && typeof mp === "object" && !Array.isArray(mp)){
     const arr = Object.entries(mp)
@@ -778,20 +1065,17 @@ function buildKeywordsFromRow(row){
       .filter(x => x.text && Number.isFinite(x.weight) && x.weight > 0);
     if (arr.length) return arr;
   }
-
   const s = String(row["키워드(가중치포함)"] || "");
   const m = [...s.matchAll(/([^,]+)\(([\d.]+)\)/g)]
     .map(x => ({ text: x[1].trim(), weight: Number(x[2]), reason:"" }))
     .filter(x => x.text && Number.isFinite(x.weight) && x.weight > 0);
   return m;
 }
-
 function renderWordCloud(divId, kwList){
   const el = document.getElementById(divId);
   if (!el) return;
 
   el.innerHTML = "";
-
   const w = el.clientWidth || 260;
   const h = el.clientHeight || 180;
 
@@ -801,10 +1085,8 @@ function renderWordCloud(divId, kwList){
   }
 
   const words0 = kwList.slice().sort((a,b)=>b.weight-a.weight).slice(0, 80);
-
   const maxW = Math.max(...words0.map(k => k.weight));
   const minW = Math.min(...words0.map(k => k.weight));
-
   const scale = (x) => {
     if (maxW === minW) return 18;
     return 12 + (x - minW) * (52 - 12) / (maxW - minW);
@@ -819,13 +1101,8 @@ function renderWordCloud(divId, kwList){
 
   const color = d3.scaleOrdinal(d3.schemeTableau10 || d3.schemeCategory10);
 
-  const svg = d3.select(el)
-    .append("svg")
-    .attr("width", w)
-    .attr("height", h);
-
-  const g = svg.append("g")
-    .attr("transform", `translate(${w/2},${h/2})`);
+  const svg = d3.select(el).append("svg").attr("width", w).attr("height", h);
+  const g = svg.append("g").attr("transform", `translate(${w/2},${h/2})`);
 
   const layout = d3.layout.cloud()
     .size([w, h])
@@ -863,12 +1140,10 @@ function renderWordCloud(divId, kwList){
       .text(d => `가중치: ${d.weight}` + (d.reason ? `\n${d.reason}` : ""));
   }
 }
-
 function renderTextRecap(rows){
   if (!rows || rows.length === 0){
     return `<div class="recapBox">데이터 없음</div>`;
   }
-
   const r = rows[0];
 
   const agendas = splitAgenda(pickFirst(r, ["주요안건","안건","agenda","main_agenda"]) || "");
@@ -904,21 +1179,34 @@ function renderTextRecap(rows){
   return html;
 }
 
-/* =========================
-   3) 발언요약 카드
-   ========================= */
+/* people/data 렌더 (기존) */
+function getParty(r, tab){
+  if (tab === "people") return normStr(pickFirst(r, ["정당","party","소속정당","요구자정당"])) || "";
+  if (tab === "data") return normStr(pickFirst(r, ["정당","party","요구자정당","소속정당"])) || "";
+  return "";
+}
+function getSpeaker(r){
+  return normStr(pickFirst(r, ["발언자명","의원명","발언자","speaker_name","speaker"])) || "";
+}
+function getPeopleBody(r){
+  return normStr(pickFirst(r, ["발언요약","발화내용 요약","요약","summary","text","본문"])) || "";
+}
+function getDataName(r){
+  return normStr(pickFirst(r, ["요구자명","요구자","요청 의원","requester","speaker_name"])) || "";
+}
+function getDataTarget(r){
+  return normStr(pickFirst(r, ["대상","대상 기관","target","기관","부처"])) || "";
+}
+function getDataReq(r){
+  return normStr(pickFirst(r, ["실제요구자료","요구자료","요구내용","request","text","본문"])) || "";
+}
+
 function filterRows(rows, tab){
   let out = rows || [];
-
   const q = (state.q || "").trim().toLowerCase();
   const partySel = (state.party || "").trim();
-
-  if (partySel){
-    out = out.filter(r => getParty(r, tab) === partySel);
-  }
-  if (q){
-    out = out.filter(r => JSON.stringify(r).toLowerCase().includes(q));
-  }
+  if (partySel) out = out.filter(r => getParty(r, tab) === partySel);
+  if (q) out = out.filter(r => JSON.stringify(r).toLowerCase().includes(q));
   return out;
 }
 
@@ -927,7 +1215,6 @@ function renderPeopleCards(rows){
   if (!filtered || filtered.length === 0) return "<div class='recapBox'>데이터 없음</div>";
 
   const shown = filtered.slice(0, state.shown.people);
-
   const cards = shown.map(r => {
     const name = getSpeaker(r);
     const party = getParty(r, "people");
@@ -961,15 +1248,11 @@ function renderPeopleCards(rows){
   return cards;
 }
 
-/* =========================
-   4) 요구자료 카드
-   ========================= */
 function renderDataCards(rows){
   const filtered = filterRows(rows, "data");
   if (!filtered || filtered.length === 0) return "<div class='recapBox'>데이터 없음</div>";
 
   const shown = filtered.slice(0, state.shown.data);
-
   const cards = shown.map(r => {
     const name = getDataName(r);
     const target = getDataTarget(r);
@@ -983,7 +1266,6 @@ function renderDataCards(rows){
       const fg = textColorForBg(bg);
       partyTag = `<span class="badge" style="background:${bg};border-color:${bg};color:${fg};font-weight:900;">${party}</span>`;
     }
-
     const catTag = cat ? `<span class="badge">${cat}</span>` : "";
 
     return `
@@ -1008,20 +1290,13 @@ function renderDataCards(rows){
   return cards;
 }
 
-/* =========================
-   5) 정당 옵션
-   ========================= */
 function fillPartyOptions(rows, tab){
   const sel = document.getElementById("partySel");
   sel.innerHTML = "";
 
   const parties = uniq((rows || []).map(r => getParty(r, tab)).filter(Boolean)).sort();
-
   sel.appendChild(new Option("전체", ""));
-
-  for (const p of parties){
-    sel.appendChild(new Option(p, p));
-  }
+  for (const p of parties) sel.appendChild(new Option(p, p));
 
   const wanted = state.party || "";
   const opts = [...sel.options].map(o => o.value);
@@ -1029,9 +1304,7 @@ function fillPartyOptions(rows, tab){
   else { sel.value = ""; state.party = ""; }
 }
 
-/* =========================
-   6) 회차별 요약 로드
-   ========================= */
+/* 회차별 요약 로드 */
 async function loadRecap(){
   if (!state.sessionNo){
     document.getElementById("tableWrap").innerHTML = "<div class='recapBox'>회차를 선택하세요</div>";
@@ -1085,29 +1358,112 @@ function renderRecapFromLast(){
 }
 
 /* =========================
-   7) 트렌드/정당별 시각화
+   ✅ trend2: 적용 버튼 방식
    ========================= */
-function renderTrendLineAll(divId, rows){
-  const enriched = rows.map(r => {
-    const p = r.period ?? (String(r.year) + "-Q" + String(r.quarter));
-    return {...r, __period: p, __count: Number(r.count ?? 0)};
-  });
+function getMultiSelectedValues(sel){
+  return [...sel.selectedOptions].map(o => o.value);
+}
+function fillSelectOptions(sel, values, keepSelected=false){
+  const prev = keepSelected ? new Set(getMultiSelectedValues(sel)) : new Set();
+  sel.innerHTML = "";
+  for (const v of values){
+    const opt = new Option(v, v);
+    sel.appendChild(opt);
+    if (keepSelected && prev.has(v)) opt.selected = true;
+  }
+}
 
-  const periods = uniq(enriched.map(r=>r.__period)).sort();
-  const domains = uniq(enriched.map(r=>r.policy_domain)).sort();
+function markTrendDirty(){
+  state.trendDirty = true;
+  document.getElementById("trendApply").disabled = false;
+}
 
-  const byDomain = new Map(domains.map(d => [d, new Map()]));
-  for (const r of enriched){
-    byDomain.get(r.policy_domain).set(r.__period, r.__count);
+function buildTrend2Query(){
+  // 1) 고급: 대수 제한
+  const useAssembly = document.getElementById("trendUseAssembly").checked;
+  let assemblies = [];
+  if (useAssembly){
+    assemblies = getMultiSelectedValues(document.getElementById("trendAssembly"))
+      .map(Number).filter(n => [20,21,22].includes(n));
   }
 
-  const data = domains.map(d => ({
+  // 2) 그룹
+  const group_by = document.querySelector('input[name="trendGroup"]:checked')?.value || "l2";
+
+  // 3) 기간
+  const preset = document.getElementById("trendPreset").value;
+  let recent_n_quarters = null;
+  let start_year=null, start_quarter=null, end_year=null, end_quarter=null;
+
+  if (preset.startsWith("recent_")){
+    recent_n_quarters = Number(preset.replace("recent_","")) || 8;
+  } else {
+    start_year = Number(document.getElementById("trendStartY").value);
+    start_quarter = Number(document.getElementById("trendStartQ").value);
+    end_year = Number(document.getElementById("trendEndY").value);
+    end_quarter = Number(document.getElementById("trendEndQ").value);
+  }
+
+  // 4) 카테고리
+  let l2_in = null, l2_eq = null, l3_in = null;
+
+  if (group_by === "l2"){
+    const l2s = getMultiSelectedValues(document.getElementById("trendL2Multi")).filter(Boolean);
+    if (l2s.length) l2_in = l2s.join(",");
+  } else {
+    l2_eq = (document.getElementById("trendL2One").value || "").trim() || null;
+    const l3s = getMultiSelectedValues(document.getElementById("trendL3Multi")).filter(Boolean);
+    if (l3s.length) l3_in = l3s.join(",");
+  }
+
+  const p = new URLSearchParams();
+  if (assemblies.length) p.set("assemblies", assemblies.join(","));
+  p.set("group_by", group_by);
+
+  if (recent_n_quarters){
+    p.set("recent_n_quarters", String(recent_n_quarters));
+  } else {
+    p.set("start_year", String(start_year));
+    p.set("start_quarter", String(start_quarter));
+    p.set("end_year", String(end_year));
+    p.set("end_quarter", String(end_quarter));
+  }
+
+  if (l2_in) p.set("l2_in", l2_in);
+  if (l2_eq) p.set("l2_eq", l2_eq);
+  if (l3_in) p.set("l3_in", l3_in);
+
+  return p.toString();
+}
+
+function renderTrend2Line(divId, rows){
+  const enriched = (rows || []).map(r => ({
+    period: String(r.period || ""),
+    label: String(r.label || "미분류"),
+    count: Number(r.count || 0),
+  }));
+
+  if (!enriched.length){
+    document.getElementById(divId).innerHTML =
+      `<div class="err">선택한 조건에 해당하는 데이터가 없습니다.</div>`;
+    return;
+  }
+
+  const periods = uniq(enriched.map(r=>r.period)).sort();
+  const labels = uniq(enriched.map(r=>r.label)).sort();
+
+  const byLabel = new Map(labels.map(l => [l, new Map()]));
+  for (const r of enriched){
+    byLabel.get(r.label).set(r.period, r.count);
+  }
+
+  const data = labels.map(l => ({
     type:"scatter",
     mode:"lines+markers",
-    name:d,
+    name:l,
     x: periods,
-    y: periods.map(p => byDomain.get(d).get(p) ?? 0),
-    hovertemplate: "%{x}<br>"+d+"<br>건수: %{y}<extra></extra>"
+    y: periods.map(p => byLabel.get(l).get(p) ?? 0),
+    hovertemplate: "%{x}<br>"+l+"<br>건수: %{y}<extra></extra>"
   }));
 
   Plotly.newPlot(divId, data, {
@@ -1119,6 +1475,69 @@ function renderTrendLineAll(divId, rows){
   }, {responsive:true, displaylogo:false});
 }
 
+async function initTrend2Controls(){
+  const opts = await fetchJSON("/api/trend2/options");
+  state.trend2Options = opts;
+
+  const years = (opts.years || []).map(String);
+  const startY = document.getElementById("trendStartY");
+  const endY = document.getElementById("trendEndY");
+  startY.innerHTML = ""; endY.innerHTML = "";
+  for (const y of years){
+    startY.appendChild(new Option(y, y));
+    endY.appendChild(new Option(y, y));
+  }
+
+  // 기본값: min/max
+  if (opts.min && opts.max){
+    startY.value = String(opts.min.year);
+    document.getElementById("trendStartQ").value = String(opts.min.quarter);
+    endY.value = String(opts.max.year);
+    document.getElementById("trendEndQ").value = String(opts.max.quarter);
+  } else if (years.length){
+    startY.value = years[0];
+    endY.value = years[years.length-1];
+  }
+
+  // L2 옵션
+  fillSelectOptions(document.getElementById("trendL2Multi"), opts.l2 || []);
+  fillSelectOptions(document.getElementById("trendL2One"), opts.l2 || []);
+
+  if ((opts.l2 || []).length){
+    document.getElementById("trendL2One").value = opts.l2[0];
+  }
+
+  await reloadL3Options();
+}
+
+async function reloadL3Options(){
+  const l2 = (document.getElementById("trendL2One").value || "").trim();
+  if (!l2){
+    fillSelectOptions(document.getElementById("trendL3Multi"), []);
+    return;
+  }
+  const l3 = await fetchJSON(`/api/trend2/options/l3?label_l2=${encodeURIComponent(l2)}`);
+  fillSelectOptions(document.getElementById("trendL3Multi"), l3 || []);
+}
+
+async function loadTrend2(){
+  setLoading("trend", true);
+  try{
+    const qs = buildTrend2Query();
+    const rows = await fetchJSON(`/api/trend2/series?${qs}`);
+    renderTrend2Line("plot_trend", rows);
+    state.trendDirty = false;
+    document.getElementById("trendApply").disabled = true;
+  } catch(e){
+    setErr("plot_trend", String(e));
+  } finally {
+    setLoading("trend", false);
+  }
+}
+
+/* =========================
+   정당별 관심(기존 유지)
+   ========================= */
 function renderPartyBarAll(divId, rows){
   const l2s = uniq(rows.map(r=>r.l2)).sort();
   const parties = uniq(rows.map(r=>r.party)).sort();
@@ -1151,8 +1570,17 @@ function renderPartyBarAll(divId, rows){
   }, {responsive:true, displaylogo:false});
 }
 
+async function loadPartyMetrics(){
+  try{
+    const partyRows = await fetchJSON("/api/party-domain-metrics?limit=5000");
+    renderPartyBarAll("plot_party", partyRows);
+  } catch(e){
+    setErr("plot_party", String(e));
+  }
+}
+
 /* =========================
-   8) 주요 질의의원
+   주요 질의의원(기존)
    ========================= */
 function getQuestionSessionNo(r){
   const v = pickFirst(r, ["session_no","회차","회의회차","session","meeting_session","sessionNo"]);
@@ -1160,7 +1588,6 @@ function getQuestionSessionNo(r){
   const m = String(v).match(/(\d+)/);
   return m ? Number(m[1]) : null;
 }
-
 function buildQuestionAggFiltered(qRows, sessionNo){
   const ses = Number(sessionNo);
   const m = new Map();
@@ -1185,7 +1612,6 @@ function buildQuestionAggFiltered(qRows, sessionNo){
   arr.sort((a,b)=>b.num_questions - a.num_questions);
   return arr;
 }
-
 function renderTop10(divId, rowsTop10){
   const x = rowsTop10.map(r => String(r.speaker).trim());
   const y = rowsTop10.map(r => Number(r.num_questions ?? 0));
@@ -1269,7 +1695,7 @@ async function loadQuestions(){
 }
 
 /* =========================
-   9) 법 개정/제도개선/규정변경
+   법 개정/제도개선(기존)
    ========================= */
 function sortLabelsByTotal(rows, labelField, getLaw, getSys, getReg){
   const sums = new Map();
@@ -1280,7 +1706,6 @@ function sortLabelsByTotal(rows, labelField, getLaw, getSys, getReg){
   }
   return [...sums.entries()].sort((a,b)=>b[1]-a[1]).map(x=>x[0]);
 }
-
 function buildStack(rows, labelField, getLaw, getSys, getReg){
   const labels = sortLabelsByTotal(rows, labelField, getLaw, getSys, getReg);
   const m = new Map(labels.map(l => [l, {law:0, sys:0, reg:0}]));
@@ -1301,7 +1726,6 @@ function buildStack(rows, labelField, getLaw, getSys, getReg){
     yReg: labels.map(l => m.get(l).reg),
   };
 }
-
 function renderStacked(divId, title, xLabels, yLaw, ySys, yReg){
   const data = [
     {type:"bar", name:"법 개정",   x:xLabels, y:yLaw},
@@ -1318,7 +1742,6 @@ function renderStacked(divId, title, xLabels, yLaw, ySys, yReg){
     legend:{orientation:"h", x:0, y:-0.25, xanchor:"left", yanchor:"top"},
   }, {responsive:true, displaylogo:false});
 }
-
 function numPick(r, keys, def=0){
   for (const k of keys){
     const v = r?.[k];
@@ -1329,7 +1752,6 @@ function numPick(r, keys, def=0){
   }
   return def;
 }
-
 async function loadLaw(){
   try{
     const [policyRows, sessionRows] = await Promise.all([
@@ -1355,23 +1777,6 @@ async function loadLaw(){
   } catch(e){
     setErr("plot_law_by_category", String(e));
     setErr("plot_law_by_party", String(e));
-  }
-}
-
-/* =========================
-   10) 트렌드/정당별 로드
-   ========================= */
-async function loadTrendParty(){
-  try{
-    const [trendRows, partyRows] = await Promise.all([
-      fetchJSON("/api/trend?limit=5000"),
-      fetchJSON("/api/party-domain-metrics?limit=5000"),
-    ]);
-    renderTrendLineAll("plot_trend", trendRows);
-    renderPartyBarAll("plot_party", partyRows);
-  } catch(e){
-    setErr("plot_trend", String(e));
-    setErr("plot_party", String(e));
   }
 }
 
@@ -1438,9 +1843,7 @@ for (const btn of document.querySelectorAll(".tabbtn")){
   });
 }
 
-/* =========================
-   이벤트(하단: 질의의원)
-   ========================= */
+/* 이벤트(하단: 질의의원) */
 document.getElementById("qAssemblySel")?.addEventListener("change", async (e) => {
   if (__syncLock) return;
 
@@ -1478,6 +1881,66 @@ document.getElementById("qSessionSel")?.addEventListener("change", async (e) => 
 });
 
 /* =========================
+   ✅ trend2 UI 동작(적용 버튼)
+   ========================= */
+function setTrendGroupUI(group){
+  const isL2 = (group === "l2");
+  document.getElementById("wrapL2Multi").style.display = isL2 ? "inline-flex" : "none";
+  document.getElementById("wrapL2One").style.display   = isL2 ? "none" : "inline-flex";
+  document.getElementById("wrapL3Multi").style.display = isL2 ? "none" : "inline-flex";
+}
+
+function setTrendPresetDisabled(){
+  const preset = document.getElementById("trendPreset").value;
+  const isCustom = (preset === "custom");
+  document.getElementById("trendStartY").disabled = !isCustom;
+  document.getElementById("trendStartQ").disabled = !isCustom;
+  document.getElementById("trendEndY").disabled = !isCustom;
+  document.getElementById("trendEndQ").disabled = !isCustom;
+}
+
+document.getElementById("trendApply").addEventListener("click", loadTrend2);
+
+document.getElementById("trendPreset").addEventListener("change", () => {
+  setTrendPresetDisabled();
+  markTrendDirty();
+});
+
+document.getElementById("trendStartY").addEventListener("change", markTrendDirty);
+document.getElementById("trendStartQ").addEventListener("change", markTrendDirty);
+document.getElementById("trendEndY").addEventListener("change", markTrendDirty);
+document.getElementById("trendEndQ").addEventListener("change", markTrendDirty);
+
+for (const r of document.querySelectorAll('input[name="trendGroup"]')){
+  r.addEventListener("change", async () => {
+    const g = document.querySelector('input[name="trendGroup"]:checked')?.value || "l2";
+    setTrendGroupUI(g);
+    if (g === "l3"){
+      await reloadL3Options();
+    }
+    markTrendDirty();
+  });
+}
+
+document.getElementById("trendL2Multi").addEventListener("change", markTrendDirty);
+
+document.getElementById("trendL2One").addEventListener("change", async () => {
+  await reloadL3Options();
+  markTrendDirty();
+});
+
+document.getElementById("trendL3Multi").addEventListener("change", markTrendDirty);
+
+// 고급옵션: 대수 제한 토글
+document.getElementById("trendUseAssembly").addEventListener("change", (e) => {
+  const on = !!e.target.checked;
+  document.getElementById("wrapAssembly").style.display = on ? "inline-flex" : "none";
+  markTrendDirty();
+});
+
+document.getElementById("trendAssembly").addEventListener("change", markTrendDirty);
+
+/* =========================
    초기 로드
    ========================= */
 (async () => {
@@ -1492,7 +1955,19 @@ document.getElementById("qSessionSel")?.addEventListener("change", async (e) => 
   finally { setLoading("q", false); }
 
   await loadLaw();
-  await loadTrendParty();
+
+  // ✅ trend2 UI 초기화
+  await initTrend2Controls();
+  setTrendGroupUI("l2");
+
+  // preset 기본: 최근 8분기 → 직접선택 비활성
+  setTrendPresetDisabled();
+
+  // 초기 1회 렌더(바로 보여주기)
+  await loadTrend2();
+
+  // 정당별 관심은 기존 그대로
+  await loadPartyMetrics();
 })();
 </script>
 

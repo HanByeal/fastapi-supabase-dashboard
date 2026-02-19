@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="ko">
+<head>
+
+<script>
+function __showErr(msg){
+  if (document.body) {
+    document.body.insertAdjacentHTML(
+      "afterbegin",
+      `<pre style="background:#111;color:#fff;padding:12px;border-radius:10px;white-space:pre-wrap;">${msg}</pre>`
+    );
+  } else {
+    // body가 아직 없으면 로딩 후 출력
+    window.addEventListener("DOMContentLoaded", () => __showErr(msg), { once: true });
+  }
+}
+
+window.addEventListener("error", (e) => {
+  __showErr(`[JS ERROR] ${e.message}\n${e.filename}:${e.lineno}:${e.colno}`);
+});
+
+window.addEventListener("unhandledrejection", (e) => {
+  __showErr(`[PROMISE ERROR] ${String(e.reason)}`);
+});
+</script>
+
+  <meta charset="utf-8" />
+  <title>대시보드</title>
+
+  <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+
+  <!-- ✅ WordCloud (d3 + d3-cloud) -->
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3-cloud@1/build/d3.layout.cloud.js"></script>
+
+  <style>
+    body { font-family: Arial, sans-serif; margin: 18px; background:#fafafa; color:#111; }
+    h2 { margin: 0 0 12px 0; }
+    h3 { margin: 0; font-size: 16px; }
+
+    .stack { display:flex; flex-direction:column; gap:14px; }
+
+    .card { background:#fff; border: 1px solid #e6e6e6; border-radius: 14px; padding: 14px; }
+    .cardhead { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom: 10px; }
+
+    .titleRow { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .badgeTitle{
+      display:inline-flex; align-items:center; gap:8px;
+      padding:7px 12px; border-radius:999px;
+      background:#111; color:#fff; font-weight:800; font-size:13px;
+      letter-spacing:-0.2px;
+    }
+
+    .controls { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    select, input { padding: 7px 10px; border:1px solid #ddd; border-radius:10px; background:#fff; }
+    .selectWrap{ display:inline-flex; align-items:center; gap:8px; }
+    .selectLabel{ font-size:12px; color:#555; font-weight:700; }
+
+    .row2 { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .plot { width: 100%; height: 420px; }
+
+    .tabs { display:flex; gap:8px; margin: 10px 0 10px 0; }
+    .tabbtn {
+      padding: 7px 10px; border:1px solid #ddd; border-radius: 12px;
+      background:#f7f7f7; cursor:pointer; font-weight:800; font-size:13px;
+    }
+    .tabbtn.active { background:#eef3ff; border-color:#bcd0ff; }
+
+    .err { color:#b00020; font-size: 13px; white-space: pre-wrap; }
+
+    table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+    th, td { border: 1px solid #ddd; padding: 7px 9px; font-size: 13px; vertical-align: top; word-wrap: break-word; }
+    th { background: #fafafa; }
+
+    .req-card { background:white; border-radius:12px; padding:12px 14px; margin-bottom:10px; border:1px solid #eee; }
+    .req-name { font-weight:900; font-size:15px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .req-target { margin-top:4px; color:#666; font-size:13px; }
+    .req-body { margin-top:8px; color:#222; white-space: pre-wrap; line-height:1.45; }
+    .badge { display:inline-flex; align-items:center; padding:3px 9px; border-radius:999px; border:1px solid #ddd; font-size:12px; color:#333; background:#f4f4f4; font-weight:800; }
+
+    .recapBox { border:1px solid #eee; border-radius:14px; padding:14px; background:#fff; }
+    .recapSection { margin-top:12px; }
+    .secTitle { font-weight:900; font-size:13px; margin-bottom:8px; }
+    .bulletList { margin:0; padding-left:16px; }
+    .bulletList li { margin:4px 0; line-height:1.35; }
+    .summaryText { white-space: pre-wrap; line-height:1.55; color:#222; padding-left: 2px; }
+
+    .textGrid{
+      display:grid;
+      grid-template-columns: 3fr 2fr;
+      grid-template-rows: auto 1fr;
+      gap:12px;
+      align-items:stretch;
+    }
+    .textGrid .leftTop { grid-column:1; grid-row:1; }
+    .textGrid .leftBottom { grid-column:1; grid-row:2; }
+    .textGrid .rightKw { grid-column:2; grid-row:1 / span 2; }
+
+    .kwCloud {
+      width: 100%;
+      height: 260px;
+      border:1px solid #eee;
+      border-radius:12px;
+      background:#fbfbfb;
+    }
+
+    .moreBtn{
+      margin-top: 10px;
+      padding: 8px 12px;
+      border-radius: 12px;
+      border: 1px solid #ddd;
+      background: #fff;
+      cursor: pointer;
+      font-weight: 900;
+      font-size: 13px;
+    }
+    .moreRow { display:flex; justify-content:center; }
+
+    @media (max-width: 1100px){
+      .textGrid{ grid-template-columns: 1fr; grid-template-rows: auto auto auto; }
+      .textGrid .rightKw{ grid-column:1; grid-row:auto; }
+      .kwCloud{ height: 220px; }
+    }
+
+    .cardLoading{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid #e5e7eb;
+      background:#f8fafc;
+      color:#334155;
+      font-weight:900;
+      font-size:12px;
+      letter-spacing:-0.2px;
+      user-select:none;
+    }
+    .titleRow .cardLoading{ margin-left: 6px; }
+
+    .miniSpin{
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      border: 2px solid #cbd5e1;
+      border-top-color:#334155;
+      animation: spin 0.8s linear infinite;
+      display:inline-block;
+      flex: 0 0 auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ✅ 트렌드 필터 UI */
+    .trendControls{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+    .radioWrap{
+      display:inline-flex;
+      gap:8px;
+      align-items:center;
+      padding:6px 10px;
+      border:1px solid #e5e7eb;
+      border-radius:12px;
+      background:#fff;
+      font-weight:900;
+      font-size:12px;
+      color:#334155;
+    }
+    .hint{ font-size:12px; color:#64748b; font-weight:800; }
+
+    .applyBtn{
+      padding: 8px 12px;
+      border-radius: 12px;
+      border: 1px solid #ddd;
+      background: #111;
+      color: #fff;
+      cursor: pointer;
+      font-weight: 900;
+      font-size: 13px;
+    }
+    .applyBtn:disabled{
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .advWrap{
+      display:inline-flex;
+      gap:8px;
+      align-items:center;
+      padding:6px 10px;
+      border:1px solid #e5e7eb;
+      border-radius:12px;
+      background:#fff;
+      font-weight:900;
+      font-size:12px;
+      color:#334155;
+    }
+
+    .topbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom: 14px;
+}
+.navLeft{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+}
+.navBrand{
+  font-weight: 900;
+  font-size: 18px;
+  color:#111;
+  text-decoration:none;
+  padding: 6px 10px;
+  border-radius: 12px;
+  background:#fff;
+  border:1px solid #e6e6e6;
+}
+.navBtn{
+  text-decoration:none;
+  color:#111;
+  font-weight: 900;
+  font-size: 13px;
+  padding: 7px 10px;
+  border:1px solid #ddd;
+  border-radius: 12px;
+  background:#f7f7f7;
+}
+.navBtn.active{
+  background:#111;
+  color:#fff;
+  border-color:#111;
+}
+.navBtn:hover{
+  background:#eef3ff;
+  border-color:#bcd0ff;
+}
+
+  </style>
+</head>
+
+<body>
+    <div class="topbar">
+        <div class="navLeft">
+          <a class="navBtn" href="https://mois-data-internship.onrender.com/" target="_blank" rel="noopener noreferrer">챗봇</a>
+          <a class="navBtn" href="/dashboard">대시보드</a>
+          <a class="navBtn" href="/news">예상 쟁점 브리핑</a>
+          <a class="navBtn" href="/speech">발언검색</a>
+        </div>
+      </div>
+      
+
+  <div class="stack">
+
+    <!-- 1) 회차별 회의록 분석 -->
+    <div class="card">
+      <div class="cardhead">
+        <div class="titleRow">
+          <span class="badgeTitle">회차별 회의록 분석</span>
+
+          <div class="selectWrap">
+            <span class="selectLabel">대수</span>
+            <select id="assemblySel"></select>
+          </div>
+
+          <div class="selectWrap">
+            <span class="selectLabel">회차</span>
+            <select id="sessionSel"></select>
+          </div>
+
+          <span id="loadingRecap" class="cardLoading" style="display:none;">
+            <span class="miniSpin"></span> 로딩 중…
+          </span>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <button class="tabbtn active" data-tab="text">회의요약</button>
+        <button class="tabbtn" data-tab="people">발언요약</button>
+        <button class="tabbtn" data-tab="data">요구자료</button>
+      </div>
+
+      <div id="filterRow" class="controls" style="margin-bottom:10px; display:none;">
+        <div class="selectWrap" style="gap:8px;">
+          <span class="selectLabel">정당</span>
+          <select id="partySel"></select>
+        </div>
+        <div class="selectWrap" style="gap:8px;">
+          <span class="selectLabel">검색</span>
+          <input id="q" placeholder="키워드 입력" style="min-width:260px;"/>
+        </div>
+      </div>
+
+      <div id="tableWrap"></div>
+      <div id="moreWrap" class="moreRow"></div>
+    </div>
+
+    <!-- 2) 주요 질의의원 -->
+    <div class="card">
+      <div class="cardhead">
+        <div class="titleRow">
+          <h3 style="margin-right:10px;">주요 질의의원</h3>
+
+          <div class="selectWrap">
+            <span class="selectLabel">대수</span>
+            <select id="qAssemblySel"></select>
+          </div>
+
+          <div class="selectWrap">
+            <span class="selectLabel">회차</span>
+            <select id="qSessionSel"></select>
+          </div>
+
+          <span id="loadingQ" class="cardLoading" style="display:none;">
+            <span class="miniSpin"></span> 로딩 중…
+          </span>
+        </div>
+      </div>
+      <div class="row2">
+        <div id="plot_q_top10" class="plot"></div>
+        <div id="tbl_q_all" class="plot" style="height:auto; min-height:420px; overflow:auto;"></div>
+      </div>
+    </div>
+
+    <!-- 3) 법 개정 / 제도개선 / 규정변경 -->
+    <div class="card">
+        <div class="cardhead" style="align-items:flex-start;">
+        <div style="display:flex;flex-direction:column;gap:10px;width:100%;">
+    
+            <!-- 1줄: 제목 + 대수(공통) -->
+            <div class="titleRow" style="justify-content:flex-start; align-items:center; gap:10px; width:100%;">
+            <h3>법 개정 · 제도 개선 · 규정 변경</h3>
+    
+            <div class="selectWrap">
+                <span class="selectLabel">대수</span>
+                <select id="law2AssemblySel">
+                  <option value="전체">전체</option>
+                  <option value="20">20대</option>
+                  <option value="21">21대</option>
+                  <option value="22" selected>22대</option>
+                </select>
+              </div>
+            
+              <!-- ✅ 기존 카드들과 동일한 로딩 스피너 패턴 -->
+              <span id="loadingLaw2" class="cardLoading" style="display:none;">
+                <span class="miniSpin"></span> 로딩 중…
+              </span>
+            </div>
+    
+            <!-- 2줄: 카테고리(왼쪽 그래프) 필터 -->
+            <div class="controls" style="gap:10px;">
+            <span class="hint">카테고리 </span>
+    
+            <div class="selectWrap">
+                <span class="selectLabel">대분류</span>
+                <select id="law2L2Sel"></select>
+            </div>
+    
+            <div class="selectWrap">
+                <span class="selectLabel">소분류</span>
+                <select id="law2L3Sel"></select>
+            </div>
+            </div>
+    
+        </div>
+        </div>
+    
+        <div class="row2">
+        <div id="plot_law_by_category" class="plot"></div>
+        <div id="plot_law_by_party" class="plot"></div>
+        </div>
+    </div>
+    
+
+    <!-- 4) 트렌드 / 정당별 -->
+    <div class="card">
+        <div class="cardhead" style="align-items:flex-start;">
+        <div style="display:flex;flex-direction:column;gap:10px; width:100%;">
+          <div class="titleRow" style="justify-content:space-between; width:100%;">
+            <h3>주요 트렌드 · 정당별 관심</h3>
+
+            <div style="display:flex; gap:10px; align-items:center;">
+              <button id="trendApply" class="applyBtn" disabled>적용</button>
+              <span id="loadingTrend" class="cardLoading" style="display:none;">
+                <span class="miniSpin"></span> 로딩 중…
+              </span>
+            </div>
+          </div>
+
+          <!-- ✅ 기간 중심 UI (대수는 고급옵션으로 내림) -->
+          <div class="trendControls">
+            <!-- 기간 프리셋 -->
+            <div class="selectWrap">
+              <span class="selectLabel">기간</span>
+              <select id="trendPreset" style="min-width:140px;">
+                <option value="recent_4">최근 4분기</option>
+                <option value="recent_8" selected>최근 8분기</option>
+                <option value="recent_12">최근 12분기</option>
+                <option value="custom">직접 선택</option>
+              </select>
+            </div>
+
+            <!-- 직접 선택(연도/분기) -->
+            <div class="selectWrap">
+              <span class="selectLabel">시작</span>
+              <select id="trendStartY"></select>
+              <select id="trendStartQ">
+                <option value="1">Q1</option><option value="2">Q2</option><option value="3">Q3</option><option value="4">Q4</option>
+              </select>
+            </div>
+
+            <div class="selectWrap">
+              <span class="selectLabel">끝</span>
+              <select id="trendEndY"></select>
+              <select id="trendEndQ">
+                <option value="1">Q1</option><option value="2">Q2</option><option value="3">Q3</option><option value="4">Q4</option>
+              </select>
+            </div>
+
+            <!-- ✅ 그룹(라벨 변경 + 줄 아래로 자연스럽게 배치되게) -->
+            <div class="radioWrap" style="margin-left: 0;">
+              <span>그룹</span>
+              <label style="display:inline-flex;gap:6px;align-items:center;">
+                <input type="radio" name="trendGroup" value="l2" checked />
+                대분류
+              </label>
+              <label style="display:inline-flex;gap:6px;align-items:center;">
+                <input type="radio" name="trendGroup" value="l3" />
+                소분류
+              </label>
+            </div>
+
+            <!-- 카테고리: L2 멀티 -->
+            <div class="selectWrap" id="wrapL2Multi">
+              <span class="selectLabel">대분류</span>
+              <select id="trendL2Multi" multiple size="1" style="min-width:220px;"></select>
+              <span class="hint">멀티</span>
+            </div>
+
+            <!-- 카테고리: L3일 때 (상위 L2 1개 + L3 멀티) -->
+            <div class="selectWrap" id="wrapL2One" style="display:none;">
+              <span class="selectLabel">상위 대분류</span>
+              <select id="trendL2One" style="min-width:220px;"></select>
+            </div>
+
+            <div class="selectWrap" id="wrapL3Multi" style="display:none;">
+              <span class="selectLabel">소분류</span>
+              <select id="trendL3Multi" multiple size="1" style="min-width:260px;"></select>
+              <span class="hint">멀티</span>
+            </div>
+
+            <!-- ✅ 고급옵션: 대수 제한 -->
+            <div class="advWrap">
+              <label style="display:inline-flex;gap:8px;align-items:center; cursor:pointer;">
+                <input type="checkbox" id="trendUseAssembly" />
+                대수로 제한(고급)
+              </label>
+            </div>
+
+            <div class="selectWrap" id="wrapAssembly" style="display:none;">
+              <span class="selectLabel">대수</span>
+              <select id="trendAssembly" multiple size="1" style="min-width:140px;">
+                <option value="20">20대</option>
+                <option value="21">21대</option>
+                <option value="22" selected>22대</option>
+              </select>
+              <span class="hint">Ctrl/Shift 멀티</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row2">
+        <div id="plot_trend" class="plot"></div>
+        <div id="plot_party" class="plot"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const path = (location.pathname || "/").replace(/\/+$/,"") || "/";
+      document.querySelectorAll(".navBtn").forEach(a => {
+        const href = (a.getAttribute("href") || "").replace(/\/+$/,"") || "/";
+        if (href.startsWith("http")) return; // 외부링크(챗봇)는 제외
+        if (href === path) a.classList.add("active");
+      });
+    });
+  </script>
+  
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>

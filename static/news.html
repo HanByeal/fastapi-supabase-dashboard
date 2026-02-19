@@ -27,6 +27,21 @@
       gap: 15px;
     }
 
+    .header-left{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .brand{
+      font-weight:900; font-size:16px; color:#111; text-decoration:none;
+      padding:8px 10px; border-radius:10px;
+      border:1px solid #e6e6e6; background:#fff;
+    }
+    .nav{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .navBtn{
+      text-decoration:none;
+      padding:8px 10px; border-radius:10px;
+      border:1px solid #ddd; background:#fff;
+      font-weight:800; font-size:13px; color:#111;
+    }
+    .navBtn.active{ background:#1a1a1a; color:#fff; border-color:#1a1a1a; }
+
     .header-title { font-size: 24px; font-weight: bold; color: #1a1a1a; }
 
     .header-controls { display: flex; gap: 10px; align-items: center; }
@@ -298,7 +313,15 @@
 </head>
 <body>
   <div class="header">
-    <div class="header-title">뉴스 기반 행안위 안건 후보 브리핑</div>
+    <div class="header-left">
+      <nav class="nav">
+        <a class="navBtn" href="https://mois-data-internship.onrender.com/" target="_blank" rel="noopener">챗봇</a>
+        <a class="navBtn" href="/">대시보드</a>
+        <a class="navBtn" href="/news">예상 쟁점 브리핑</a>
+        <a class="navBtn" href="/speech">발언검색</a>
+      </nav>
+    </div>
+  
     <div class="header-controls">
       <div class="search-box">
         <input id="q" type="text" class="search-input" placeholder="키워드/질문/배경으로 검색" />
@@ -306,6 +329,7 @@
       </div>
     </div>
   </div>
+  
 
   <div class="content-area">
     <div class="main-content">
@@ -634,5 +658,17 @@
 
     init();
   </script>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      let p = location.pathname.replace(/\/+$/,'') || "/";
+      if (p === "/") p = "/dashboard";
+      document.querySelectorAll(".navBtn").forEach(a=>{
+        const href = (a.getAttribute("href")||"").replace(/\/+$/,'');
+        if (!href.startsWith("http") && href === p) a.classList.add("active");
+      });
+    });
+  </script>
+
 </body>
 </html>

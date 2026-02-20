@@ -96,7 +96,15 @@ async def api_news_issues(
             agg[kw]["latest_at"] = created_at
 
     out = list(agg.values())
-    out.sort(key=lambda x: (str(x["latest_at"]), x["qa_count"], x["keyword"]), reverse=True)
+    # ✅ 최신순( latest_at desc ) 확정 + 2차: qa_count desc + 3차: keyword asc
+    out.sort(
+        key=lambda x: (
+            str(x.get("latest_at") or ""),   # 최신시간
+            int(x.get("qa_count") or 0),     # QA 개수
+            x.get("keyword") or "",          # 키워드
+        ),
+        reverse=True,
+    )
     return out
 
 

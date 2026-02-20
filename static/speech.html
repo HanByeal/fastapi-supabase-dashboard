@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>발언검색</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',sans-serif;
+      background:#f5f7fa;
+      color:#111;
+      padding:18px;
+    }
+
+    /* ===== 네비(카드 바깥) ===== */
+    .navRow{
+      max-width:1120px;margin:0 auto 14px auto;
+      display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    }
+    .navBtn{
+      text-decoration:none;color:#111;font-weight:900;font-size:13px;
+      padding:7px 10px;border:1px solid #ddd;border-radius:12px;background:#f7f7f7;
+    }
+    .navBtn.active{background:#111;color:#fff;border-color:#111;}
+    .navBtn:hover{background:#eef3ff;border-color:#bcd0ff;}
+
+    .stack{display:flex;flex-direction:column;gap:14px;max-width:1120px;margin:0 auto;}
+    .card{background:#fff;border:1px solid #e6e6e6;border-radius:14px;padding:14px;box-shadow:0 2px 8px rgba(0,0,0,0.06);}
+    .cardhead{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px;}
+    .titleRow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+    .badgeTitle{
+      display:inline-flex;align-items:center;gap:8px;
+      padding:7px 12px;border-radius:999px;background:#111;color:#fff;
+      font-weight:900;font-size:13px;letter-spacing:-0.2px;
+    }
+    .muted{color:#64748b;font-size:12px;font-weight:800;}
+
+    .controls{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;}
+    .field{display:inline-flex;flex-direction:column;gap:6px;}
+    .label{font-size:12px;color:#555;font-weight:800;}
+    input{
+      padding:8px 10px;border:1px solid #ddd;border-radius:10px;background:#fff;
+      font-size:13px;min-width:160px;
+    }
+    input[type="date"]{min-width:150px;}
+    .kw{min-width:320px;}
+    .btn{
+      padding:8px 12px;border-radius:12px;border:1px solid #ddd;background:#111;color:#fff;
+      cursor:pointer;font-weight:900;font-size:13px;
+      display:inline-flex;align-items:center;gap:8px;
+    }
+    .btn:active{transform:translateY(1px);}
+    .loading{
+      display:none;
+      font-size:12px;
+      color:#cbd5e1;
+      font-weight:900;
+    }
+    .hintRow{margin-top:8px;display:flex;justify-content:flex-end;}
+    .hintRow .muted{font-weight:900;}
+
+    .grid{display:grid;grid-template-columns:1fr;gap:12px;}
+    .chartWrap{border:1px solid #eee;border-radius:12px;background:#fbfbfb;padding:12px;}
+    .statRow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+    .stat{display:inline-flex;gap:6px;align-items:center;padding:6px 10px;border:1px solid #eee;border-radius:999px;background:#fff;font-size:12px;font-weight:900;color:#334155;}
+    .stat b{color:#111;}
+
+    .sectionTitle{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:6px;}
+    .sectionTitle h3{font-size:14px;font-weight:900;}
+
+    .cards{display:grid;grid-template-columns:1fr;gap:10px;margin-top:10px;}
+
+    .speechCard{border:1px solid #eee;border-radius:14px;background:#fff;padding:12px 14px;}
+    /* 핵심: 오른쪽으로 밀지 않고, 전부 왼쪽에 나란히 */
+    .speechTop{
+      display:flex;
+      justify-content:flex-start;
+      align-items:flex-start;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+
+    /* 이름/직책/소속 박스(테두리) */
+    .whoBox{
+      border:1px solid #e5e7eb;
+      border-radius:12px;
+      padding:8px 10px;
+      background:#fff;
+      display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+      min-width:0;
+    }
+    .name{font-weight:900;font-size:14px;}
+    .pos{font-weight:800;font-size:12px;color:#475569;}
+    .dot{color:#94a3b8;font-weight:900;}
+
+    /* 432회/날짜 박스(테두리) */
+    .metaBox{
+      border:1px solid #e5e7eb;
+      border-radius:12px;
+      padding:8px 10px;
+      background:#f8fafc;
+      display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+      font-size:12px;font-weight:900;color:#111;
+    }
+
+    .text{margin-top:10px;white-space:pre-wrap;line-height:1.55;color:#222;font-size:14px;}
+
+    .alert{
+      display:none;
+      margin-top:10px;
+      border:1px solid #ffd6d6;
+      background:#fff5f5;
+      color:#b00020;
+      padding:10px 12px;
+      border-radius:12px;
+      font-weight:900;
+      font-size:13px;
+    }
+    .noResult{
+      display:none;
+      margin-top:10px;
+      color:#b00020;
+      font-weight:900;
+      font-size:13px;
+    }
+    @media (max-width:900px){
+      .kw{min-width:240px;width:100%;}
+      input{width:100%;}
+      .controls{width:100%;}
+      .field{flex:1 1 auto;}
+      .hintRow{justify-content:flex-start;}
+    }
+  </style>
+</head>
+
+<body>
+  <!-- ✅ 네비: 카드 바깥(외부) -->
+  <div class="navRow">
+    <a class="navBtn" href="https://mois-data-internship.onrender.com/" target="_blank" rel="noopener noreferrer">챗봇</a>
+    <a class="navBtn" href="/dashboard">대시보드</a>
+    <a class="navBtn" href="/news">예상 쟁점 브리핑</a>
+    <a class="navBtn active" href="/speech">발언검색</a>
+  </div>
+
+  <div class="stack">
+    <div class="card">
+      <div class="cardhead">
+        <div class="titleRow">
+          <span class="badgeTitle">발언검색</span>
+          <span class="muted">월 단위 집계 · 최신 발언 카드</span>
+        </div>
+        <div class="statRow">
+          <span class="stat">총 발언 <b id="totalCount">-</b></span>
+        </div>
+      </div>
+
+      <div class="controls">
+        <div class="field" style="flex:1 1 420px;">
+          <div class="label">키워드</div>
+          <input id="kw" class="kw" type="text" placeholder="예: 행정안전부, 지방자치단체연합…" />
+        </div>
+        <div class="field">
+          <div class="label">시작일</div>
+          <input id="from" type="date" />
+        </div>
+        <div class="field">
+          <div class="label">종료일</div>
+          <input id="to" type="date" />
+        </div>
+        <button id="searchBtn" class="btn">검색<span id="loading" class="loading">불러오는 중…</span></button>
+      </div>
+
+      <div class="hintRow">
+        <div class="muted">기간을 비우면 전체 기간으로 조회합니다.</div>
+      </div>
+
+      <div id="alert" class="alert"></div>
+    </div>
+
+    <div class="card">
+      <div class="grid">
+        <div class="chartWrap">
+          <canvas id="tsChart" height="120"></canvas>
+        </div>
+
+        <div class="sectionTitle">
+          <h3>발언 목록</h3>
+          <span class="muted">최신순(날짜 가까운 순)</span>
+        </div>
+
+        <div class="cards" id="cards"></div>
+        <div class="noResult" id="noResult">결과가 없습니다. 키워드/기간을 바꿔 다시 시도해 주세요.</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const DEFAULT_KW = "행정안전부";
+  const $ = (id) => document.getElementById(id);
+
+  // ====== 날짜/월 유틸 ======
+  function ymdToMonth(ymd){ return (ymd||"").slice(0,7); } // YYYY-MM-DD -> YYYY-MM
+  function monthSeq(minMonth, maxMonth){
+    const out = [];
+    if(!minMonth || !maxMonth) return out;
+    const [y1,m1] = minMonth.split("-").map(Number);
+    const [y2,m2] = maxMonth.split("-").map(Number);
+    let y=y1, m=m1;
+    while (y<y2 || (y===y2 && m<=m2)){
+      out.push(`${y}-${String(m).padStart(2,"0")}`);
+      m += 1;
+      if(m===13){m=1;y+=1;}
+    }
+    return out;
+  }
+
+  // ====== 상태/알림 ======
+  function setAlert(msg){
+    const el = $("alert");
+    if(!msg){
+      el.style.display = "none";
+      el.textContent = "";
+      return;
+    }
+    el.style.display = "block";
+    el.textContent = msg;
+  }
+  function setLoading(on){
+    $("loading").style.display = on ? "inline" : "none";
+    $("searchBtn").disabled = on;
+  }
+
+  // ====== API ======
+  async function apiSearch(){
+    const kw = ($("kw").value || DEFAULT_KW).trim();
+    const start = $("from").value || "";
+    const end = $("to").value || "";
+
+    const qs = new URLSearchParams({ kw, limit: "50", offset: "0" });
+    if(start) qs.set("start", start);
+    if(end) qs.set("end", end);
+
+    const r = await fetch(`/api/speech/search?${qs.toString()}`, { headers: { "Accept": "application/json" }});
+    const ct = r.headers.get("content-type") || "";
+    const text = await r.text();
+    if(!r.ok){
+      throw new Error(`API ${r.status}: ${text.slice(0,300)}`);
+    }
+    if(ct.includes("application/json")){
+      return JSON.parse(text);
+    }
+    throw new Error("API response is not JSON");
+  }
+
+  // ====== 차트 ======
+  let chart = null;
+
+  function renderChart(series, startYmd, endYmd){
+    // series: [{month:"YYYY-MM",count:n}, ...]
+    const s = Array.isArray(series) ? series.slice() : [];
+    s.sort((a,b)=> (a.month||"").localeCompare(b.month||""));
+
+    const fromM = ymdToMonth(startYmd);
+    const toM   = ymdToMonth(endYmd);
+
+    const labels = monthSeq(fromM, toM);
+    const map = new Map(s.map(x => [x.month, Number(x.count||0)]));
+    const data = labels.map(m => map.get(m) ?? 0);
+
+    const ctx = $("tsChart").getContext("2d");
+    if(chart) chart.destroy();
+
+    chart = new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [{
+          label: "발언 수(월)",
+          data,
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { mode: "index", intersect: false }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 12 } },
+          y: { beginAtZero: true, grid: { color: "#eef2f7" } }
+        }
+      }
+    });
+
+    $("totalCount").textContent = data.reduce((a,b)=>a+b,0).toLocaleString();
+  }
+
+  // ====== 카드 ======
+  function renderCards(rows){
+    const wrap = $("cards");
+    wrap.innerHTML = "";
+
+    const list = Array.isArray(rows) ? rows.slice() : [];
+    list.sort((a,b) => (b.date||"").localeCompare(a.date||""));
+
+    $("noResult").style.display = list.length ? "none" : "block";
+
+    for(const r of list){
+      const sessionNum = (r.session != null) ? String(r.session) :
+                         (r.session_dir||"").replace("제","").replace("회","");
+
+      const party = (r.party || "-").trim();
+      const name  = (r.speaker_name || "-").trim();
+      const pos   = (r.speaker_position || "-").trim();
+      const date  = (r.date || "-").trim();
+
+      // ✅ meeting_no(제1호 등) 표시하지 않음
+      const card = document.createElement("div");
+      card.className = "speechCard";
+      card.innerHTML = `
+        <div class="speechTop">
+          <div class="whoBox">
+            <span class="name">${escapeHtml(name)}</span>
+            <span class="pos">${escapeHtml(pos)}</span>
+            <span class="dot">·</span>
+            <span class="pos">${escapeHtml(party)}</span>
+          </div>
+          <div class="metaBox">
+            <span>${escapeHtml(sessionNum)}회</span>
+            <span class="dot">·</span>
+            <span>${escapeHtml(date)}</span>
+          </div>
+        </div>
+        <div class="text">${escapeHtml(r.speech_text || "")}</div>
+      `;
+      wrap.appendChild(card);
+    }
+  }
+
+  function escapeHtml(s){
+    return String(s)
+      .replaceAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;")
+      .replaceAll("'","&#39;");
+  }
+
+  // ====== 전체 적용 ======
+  function applyPayload(p){
+    $("kw").value = p.keyword || $("kw").value || DEFAULT_KW;
+    if(p.start) $("from").value = p.start;
+    if(p.end) $("to").value = p.end;
+
+    renderChart(p.series || [], p.start || "", p.end || "");
+    renderCards(p.speeches || []);
+  }
+
+  async function run(){
+    setAlert("");
+    setLoading(true);
+    try{
+      const payload = await apiSearch();
+      applyPayload(payload);
+    }catch(e){
+      console.error(e);
+      setAlert(`조회 실패: ${e.message}`);
+    }finally{
+      setLoading(false);
+    }
+  }
+
+  // 초기 로딩: 화면표시는 안 하지만 기본 키워드로 조회
+  window.addEventListener("DOMContentLoaded", () => {
+    $("kw").value = DEFAULT_KW;
+    run();
+  });
+
+  $("searchBtn").addEventListener("click", run);
+  $("kw").addEventListener("keydown", (e)=>{ if(e.key==="Enter") run(); });
+</script>
+</body>
+</html>

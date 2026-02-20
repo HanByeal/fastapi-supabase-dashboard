@@ -9,6 +9,7 @@ from routers.questions import router as questions_router
 from routers.meta import router as meta_router
 from routers.law import router as law_router
 from routers.trend import router as trend_router
+from routers import speech
 
 app = FastAPI(title="FastAPI + Supabase Dashboard")
 
@@ -22,6 +23,7 @@ app.include_router(questions_router)
 app.include_router(meta_router)
 app.include_router(law_router)
 app.include_router(trend_router)
+app.include_router(speech.router)
 
 # ✅ 루트로 들어오면 대시보드로
 @app.get("/")
@@ -33,7 +35,12 @@ async def root():
 async def dashboard_page():
     return FileResponse("static/dashboard.html")
 
+from pathlib import Path
+BASE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = BASE_DIR / "static"
+
 # ✅ 발언검색: 일단 임시 페이지(나중에 static/speech.html로 교체 가능)
 @app.get("/speech")
-async def speech_page():
-    return "<h2>발언검색(준비중)</h2>"
+def speech_page():
+    return FileResponse(STATIC_DIR / "speech.html")
+

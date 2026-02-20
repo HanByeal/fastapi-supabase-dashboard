@@ -42,6 +42,14 @@
     }
     .navBtn.active{ background:#1a1a1a; color:#fff; border-color:#1a1a1a; }
 
+    /* ✅ 상단 기준 시간 표시 */
+    .asof{
+      margin-left: 6px;
+      font-size: 12px;
+      color: #666;
+      font-weight: 700;
+    }
+
     .header-title { font-size: 24px; font-weight: bold; color: #1a1a1a; }
 
     .header-controls { display: flex; gap: 10px; align-items: center; }
@@ -138,12 +146,14 @@
 
     .issue-title-section { flex: 1; min-width: 0; }
 
+    /* ✅ meta 영역은 남겨두되(레이아웃 안정), 배지는 제거됨 */
     .issue-meta {
       display: flex;
       gap: 12px;
       margin-bottom: 10px;
       align-items: center;
       flex-wrap: wrap;
+      min-height: 0;
     }
 
     .badge {
@@ -255,20 +265,27 @@
     }
     .answer-text{
       flex: 1 1 auto;
-      white-space: pre-wrap;
+      white-space: pre-wrap; /* 기본은 유지(전체 보기에서 필요) */
     }
 
+    /* ✅ 미리보기 박스 컴팩트 + 줄수 제한(스크롤 없이) */
     .answer-preview {
       background-color: #e3f2fd;
-      padding: 12px 15px;
+      padding: 10px 12px;          /* 12x15 -> 축소 */
       border-radius: 4px;
       font-size: 14px;
       color: #2980b9;
-      line-height: 1.6;
+      line-height: 1.45;
       position: relative;
-      white-space: pre-wrap;
+      white-space: normal;         /* pre-wrap 제거 */
+    }
+    .answer-preview .answer-text{
+    white-space: pre-line;   /* 줄바꿈 유지 */
+    display: block;          /* 자연 높이 */
+    overflow: visible;       /* 안 잘림 */
     }
 
+    /* 전체보기는 원래대로 줄바꿈 유지 */
     .answer-full {
       display: none;
       margin-top: 10px;
@@ -280,6 +297,7 @@
       line-height: 1.7;
       white-space: pre-wrap;
     }
+    .answer-full .answer-text{ white-space: pre-wrap; }
     .answer-full.show { display: block; }
 
     .show-more-btn {
@@ -319,9 +337,11 @@
         <a class="navBtn" href="/">대시보드</a>
         <a class="navBtn" href="/news">예상 쟁점 브리핑</a>
         <a class="navBtn" href="/speech">발언검색</a>
+        <!-- ✅ 기준 시간(발언검색 옆) -->
+        <span id="asOf" class="asof"></span>
       </nav>
     </div>
-  
+
     <div class="header-controls">
       <div class="search-box">
         <input id="q" type="text" class="search-input" placeholder="키워드/질문/배경으로 검색" />
@@ -329,7 +349,7 @@
       </div>
     </div>
   </div>
-  
+
 
   <div class="content-area">
     <div class="main-content">
@@ -449,18 +469,15 @@
     function issueCardHTML(x, idx) {
       const id = 'issue_' + (idx+1);
       const iconId = 'icon_' + (idx+1);
-      const badgeColor = toBadgeColor(x.qa_count || 0);
       const subtitle = x.background_preview || '';
-      const latest = x.latest_at ? formatTs(x.latest_at) : '';
 
       return `
         <div class="issue-card" id="${id}_card">
           <div class="issue-header" onclick="toggleIssue('${id}', '${esc(x.keyword)}', ${idx+1})">
             <div class="issue-title-section">
-              <div class="issue-meta">
-                <span class="badge ${badgeColor}">Q&A ${esc(x.qa_count || 0)}개</span>
-                <span class="badge gray">${esc(latest)}</span>
-              </div>
+              <!-- ✅ 카드 상단의 'Q&A N개', 시간 배지 제거 -->
+              <div class="issue-meta"></div>
+
               <div class="issue-title">${esc(x.keyword)}</div>
               <div class="issue-subtitle">${esc(subtitle)}</div>
             </div>
@@ -620,6 +637,8 @@
         items = items.filter(x => parseTag(x.keyword) === ACTIVE_TAG);
       }
 
+      items.sort((a,b) => String(b.latest_at||'').localeCompare(String(a.latest_at||'')));
+
       renderMain(items);
       renderSidebar(items);
       renderTags(ISSUES); // 태그는 전체 기준(의도적으로 고정)
@@ -640,6 +659,14 @@
           issues.sort((a,b) => String(b.latest_at||'').localeCompare(String(a.latest_at||'')));
           ISSUES = issues;
           ACTIVE_TAG = null;
+
+          /* ✅ 상단 '기준: YYYY-MM-DD HH:MM' 표시(발언검색 옆) */
+          const asOfEl = document.getElementById('asOf');
+          if (asOfEl){
+            const ts = (issues && issues.length && issues[0].latest_at) ? formatTs(issues[0].latest_at) : "";
+            asOfEl.textContent = ts ? `기준: ${ts}` : "";
+          }
+
           applyFiltersAndRender();
         } catch (e) {
           const list = document.getElementById('list');

@@ -396,13 +396,21 @@ function renderWordCloud(divId, kwList){
       .style("font-size", d => `${d.size}px`)
       .text(d => d.text);
 
+    texts
+      .style("cursor", "pointer")
+      .on("click", (event, d) => {
+        const url = new URL("/speech", location.origin);
+        url.searchParams.set("kw", d.text);
+        window.location.href = url.toString();
+      });
+
     const bbox = g.node().getBBox();
     const dx = (w / 2) - (bbox.x + bbox.width / 2);
     const dy = (h / 2) - (bbox.y + bbox.height / 2);
     g.attr("transform", `translate(${dx},${dy})`);
 
     texts.append("title")
-      .text(d => `가중치: ${d.weight}` + (d.reason ? `\n${d.reason}` : ""));
+        .text(d => (d.reason && String(d.reason).trim()) ? String(d.reason).trim() : d.text);
   }
 }
 function renderTextRecap(rows){

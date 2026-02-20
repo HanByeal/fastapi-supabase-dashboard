@@ -376,8 +376,17 @@
 
   // 초기 로딩: 화면표시는 안 하지만 기본 키워드로 조회
   window.addEventListener("DOMContentLoaded", () => {
-    $("kw").value = DEFAULT_KW;
-    run();
+  const qs = new URLSearchParams(location.search);
+
+  const kw = (qs.get("kw") || "").trim();
+  const start = (qs.get("start") || "").trim();
+  const end = (qs.get("end") || "").trim();
+
+  $("kw").value = kw || DEFAULT_KW;
+  if (start) $("from").value = start;
+  if (end) $("to").value = end;
+
+  run();
   });
 
   $("searchBtn").addEventListener("click", run);

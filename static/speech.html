@@ -13,12 +13,8 @@
       color:#111;
       padding:18px;
     }
-
-    /* ===== 네비(카드 바깥) ===== */
-    .navRow{
-      max-width:1120px;margin:0 auto 14px auto;
-      display:flex;align-items:center;gap:10px;flex-wrap:wrap;
-    }
+    .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+    .navLeft{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
     .navBtn{
       text-decoration:none;color:#111;font-weight:900;font-size:13px;
       padding:7px 10px;border:1px solid #ddd;border-radius:12px;background:#f7f7f7;
@@ -26,7 +22,7 @@
     .navBtn.active{background:#111;color:#fff;border-color:#111;}
     .navBtn:hover{background:#eef3ff;border-color:#bcd0ff;}
 
-    .stack{display:flex;flex-direction:column;gap:14px;max-width:1120px;margin:0 auto;}
+    .stack{display:flex;flex-direction:column;gap:14px;max-width:1280px;margin:0 auto;}
     .card{background:#fff;border:1px solid #e6e6e6;border-radius:14px;padding:14px;box-shadow:0 2px 8px rgba(0,0,0,0.06);}
     .cardhead{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px;}
     .titleRow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
@@ -36,8 +32,7 @@
       font-weight:900;font-size:13px;letter-spacing:-0.2px;
     }
     .muted{color:#64748b;font-size:12px;font-weight:800;}
-
-    .controls{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;}
+    .controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
     .field{display:inline-flex;flex-direction:column;gap:6px;}
     .label{font-size:12px;color:#555;font-weight:800;}
     input{
@@ -49,99 +44,106 @@
     .btn{
       padding:8px 12px;border-radius:12px;border:1px solid #ddd;background:#111;color:#fff;
       cursor:pointer;font-weight:900;font-size:13px;
-      display:inline-flex;align-items:center;gap:8px;
     }
     .btn:active{transform:translateY(1px);}
-    .loading{
-      display:none;
-      font-size:12px;
-      color:#cbd5e1;
-      font-weight:900;
+    .subRow{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px;}
+    .pill{
+      display:inline-flex;align-items:center;gap:8px;
+      padding:6px 10px;border-radius:999px;border:1px solid #e5e7eb;background:#f8fafc;
+      font-size:12px;font-weight:900;color:#334155;
     }
-    .hintRow{margin-top:8px;display:flex;justify-content:flex-end;}
-    .hintRow .muted{font-weight:900;}
 
-    .grid{display:grid;grid-template-columns:1fr;gap:12px;}
+    /* ====== 본문 2열(왼쪽 차트+목록 / 오른쪽 위젯) ====== */
+    .mainGrid{
+      display:grid;
+      grid-template-columns: 1.65fr 0.85fr;
+      gap:12px;
+      align-items:start;
+    }
+    @media (max-width: 980px){
+      .mainGrid{grid-template-columns:1fr;}
+    }
+
     .chartWrap{border:1px solid #eee;border-radius:12px;background:#fbfbfb;padding:12px;}
-    .statRow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
-    .stat{display:inline-flex;gap:6px;align-items:center;padding:6px 10px;border:1px solid #eee;border-radius:999px;background:#fff;font-size:12px;font-weight:900;color:#334155;}
-    .stat b{color:#111;}
-
-    .sectionTitle{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:6px;}
+    .sectionTitle{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;}
     .sectionTitle h3{font-size:14px;font-weight:900;}
-
     .cards{display:grid;grid-template-columns:1fr;gap:10px;margin-top:10px;}
-
     .speechCard{border:1px solid #eee;border-radius:14px;background:#fff;padding:12px 14px;}
-    /* 핵심: 오른쪽으로 밀지 않고, 전부 왼쪽에 나란히 */
-    .speechTop{
-      display:flex;
-      justify-content:flex-start;
-      align-items:flex-start;
-      gap:10px;
-      flex-wrap:wrap;
-    }
-
-    /* 이름/직책/소속 박스(테두리) */
-    .whoBox{
-      border:1px solid #e5e7eb;
-      border-radius:12px;
-      padding:8px 10px;
-      background:#fff;
-      display:flex;align-items:center;gap:8px;flex-wrap:wrap;
-      min-width:0;
-    }
+    .speechTop{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap;}
+    .leftMeta{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+    .whoBox{display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap;}
     .name{font-weight:900;font-size:14px;}
     .pos{font-weight:800;font-size:12px;color:#475569;}
-    .dot{color:#94a3b8;font-weight:900;}
-
-    /* 432회/날짜 박스(테두리) */
-    .metaBox{
-      border:1px solid #e5e7eb;
-      border-radius:12px;
-      padding:8px 10px;
-      background:#f8fafc;
-      display:flex;align-items:center;gap:8px;flex-wrap:wrap;
-      font-size:12px;font-weight:900;color:#111;
-    }
+    .rightMeta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;}
+    .tag{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;border:1px solid #e5e7eb;background:#f8fafc;font-size:12px;font-weight:900;color:#334155;}
+    .tag.session{background:#eef3ff;border-color:#bcd0ff;color:#1a2a66;}
+    .tag.date{background:#f7f7f7;border-color:#e5e7eb;color:#111;}
+    .tag.meeting{background:#f5f5f5;border-color:#e5e7eb;color:#111;}
 
     .text{margin-top:10px;white-space:pre-wrap;line-height:1.55;color:#222;font-size:14px;}
+    .text.collapsed{display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden;}
+    .moreRow{margin-top:8px;display:flex;justify-content:flex-end;}
+    .moreBtn{
+      border:1px solid #e5e7eb;background:#fff;border-radius:10px;
+      padding:6px 10px;font-size:12px;font-weight:900;cursor:pointer;color:#111;
+    }
+    .moreBtn:hover{background:#f3f4f6;}
+
+    /* 키워드 강조 */
+    mark.kwMark{
+      background:#fff0b3;
+      padding:0 2px;
+      border-radius:4px;
+    }
 
     .alert{
-      display:none;
-      margin-top:10px;
-      border:1px solid #ffd6d6;
-      background:#fff5f5;
-      color:#b00020;
-      padding:10px 12px;
-      border-radius:12px;
-      font-weight:900;
-      font-size:13px;
+      display:none;margin-top:10px;border:1px solid #ffd6d6;background:#fff5f5;color:#b00020;
+      padding:10px 12px;border-radius:12px;font-weight:900;font-size:13px;
     }
-    .noResult{
-      display:none;
-      margin-top:10px;
-      color:#b00020;
-      font-weight:900;
-      font-size:13px;
+    .noResult{display:none;margin-top:10px;color:#b00020;font-weight:900;font-size:13px;}
+    .loading{display:none;margin-left:8px;font-size:12px;color:#64748b;font-weight:900;}
+
+    /* 오른쪽 위젯 */
+    .side{
+      position:sticky; top:14px;
+      display:flex; flex-direction:column; gap:12px;
     }
-    @media (max-width:900px){
-      .kw{min-width:240px;width:100%;}
-      input{width:100%;}
-      .controls{width:100%;}
-      .field{flex:1 1 auto;}
-      .hintRow{justify-content:flex-start;}
+    .widget{
+      border:1px solid #eee;border-radius:14px;background:#fff;padding:12px 14px;
+      box-shadow:0 2px 8px rgba(0,0,0,0.05);
     }
+    .widget h4{font-size:13px;font-weight:900;margin-bottom:8px;}
+    .wList{display:flex;flex-direction:column;gap:8px;}
+    .wItem{display:flex;justify-content:space-between;gap:10px;align-items:center;}
+    .wItem .left{min-width:0;}
+    .wItem .left b{font-size:13px;}
+    .wItem .left div{font-size:12px;color:#64748b;font-weight:800;margin-top:2px;}
+    .wItem .right{font-size:12px;font-weight:900;color:#111;white-space:nowrap;}
+    .wBig{
+      display:flex;justify-content:space-between;align-items:center;gap:10px;
+      padding:10px 12px;border:1px solid #eee;border-radius:12px;background:#fbfbfb;
+    }
+    .wBig b{font-size:14px;}
+    .wBig span{font-size:12px;font-weight:900;color:#475569;white-space:nowrap;}
+
+    /* 더 불러오기 */
+    .loadRow{margin-top:12px;display:flex;justify-content:center;}
+    .loadMoreBtn{
+      padding:10px 14px;border-radius:12px;border:1px solid #ddd;background:#111;color:#fff;
+      cursor:pointer;font-weight:900;font-size:13px;
+    }
+    .loadMoreBtn:disabled{opacity:.5;cursor:not-allowed;}
   </style>
 </head>
 
 <body>
-  <!-- ✅ 네비: 카드 바깥(외부) -->
-  <div class="navRow">
-    <a class="navBtn" href="https://mois-data-internship.onrender.com/" target="_blank" rel="noopener noreferrer">챗봇</a>
-    <a class="navBtn" href="/dashboard">대시보드</a>
-    <a class="navBtn" href="/news">예상 쟁점 브리핑</a>
-    <a class="navBtn active" href="/speech">발언검색</a>
+  <div class="topbar">
+    <div class="navLeft">
+      <a class="navBtn" href="https://mois-data-internship.onrender.com/" target="_blank" rel="noopener noreferrer">챗봇</a>
+      <a class="navBtn" href="/dashboard">대시보드</a>
+      <a class="navBtn" href="/news">예상 쟁점 브리핑</a>
+      <a class="navBtn active" href="/speech">발언검색</a>
+    </div>
   </div>
 
   <div class="stack">
@@ -149,11 +151,9 @@
       <div class="cardhead">
         <div class="titleRow">
           <span class="badgeTitle">발언검색</span>
-          <span class="muted">월 단위 집계 · 최신 발언 카드</span>
+          <span class="muted">월 단위 집계 · 발언 목록</span>
         </div>
-        <div class="statRow">
-          <span class="stat">총 발언 <b id="totalCount">-</b></span>
-        </div>
+        <div class="muted" id="rangeHint">-</div>
       </div>
 
       <div class="controls">
@@ -172,36 +172,66 @@
         <button id="searchBtn" class="btn">검색<span id="loading" class="loading">불러오는 중…</span></button>
       </div>
 
-      <div class="hintRow">
-        <div class="muted">기간을 비우면 전체 기간으로 조회합니다.</div>
-      </div>
-
       <div id="alert" class="alert"></div>
     </div>
 
     <div class="card">
-      <div class="grid">
-        <div class="chartWrap">
-          <canvas id="tsChart" height="120"></canvas>
+      <div class="mainGrid">
+        <!-- LEFT -->
+        <div>
+          <div class="chartWrap">
+            <canvas id="tsChart" height="120"></canvas>
+          </div>
+
+          <div class="sectionTitle">
+            <h3>발언 목록</h3>
+            <span class="muted" id="listHint">최신순</span>
+          </div>
+
+          <div class="cards" id="cards"></div>
+          <div class="noResult" id="noResult">결과가 없습니다. 키워드/기간을 바꿔 다시 시도해 주세요.</div>
+
+          <div class="loadRow">
+            <button id="loadMoreBtn" class="loadMoreBtn" style="display:none;">더 불러오기</button>
+          </div>
         </div>
 
-        <div class="sectionTitle">
-          <h3>발언 목록</h3>
-          <span class="muted">최신순(날짜 가까운 순)</span>
-        </div>
+        <!-- RIGHT -->
+        <aside class="side">
+          <div class="widget">
+            <h4>Top 발언자 (Top 5)</h4>
+            <div class="wList" id="topSpeakersList">
+              <div class="muted">-</div>
+            </div>
+          </div>
 
-        <div class="cards" id="cards"></div>
-        <div class="noResult" id="noResult">결과가 없습니다. 키워드/기간을 바꿔 다시 시도해 주세요.</div>
+          <div class="widget">
+            <h4>피크 월</h4>
+            <div class="wBig">
+              <b id="peakMonth">-</b>
+              <span id="peakCount">-</span>
+            </div>
+          </div>
+
+          <div class="widget">
+            <h4>최근 6개월 추이</h4>
+            <div class="wList" id="recent6List">
+              <div class="muted">-</div>
+            </div>
+          </div>
+        </aside>
       </div>
     </div>
   </div>
 
 <script>
   const DEFAULT_KW = "행정안전부";
+  const PAGE_LIMIT = 50;
+
   const $ = (id) => document.getElementById(id);
 
-  // ====== 날짜/월 유틸 ======
-  function ymdToMonth(ymd){ return (ymd||"").slice(0,7); } // YYYY-MM-DD -> YYYY-MM
+  // ====== 월 유틸 ======
+  function ymdToMonth(ymd){ return (ymd||"").slice(0,7); }
   function monthSeq(minMonth, maxMonth){
     const out = [];
     if(!minMonth || !maxMonth) return out;
@@ -215,99 +245,146 @@
     }
     return out;
   }
+  function fmtRange(s,e){
+    if(s && e) return `${s} ~ ${e}`;
+    if(s && !e) return `${s} ~`;
+    if(!s && e) return `~ ${e}`;
+    return "-";
+  }
 
-  // ====== 상태/알림 ======
+  // ====== 상태 ======
   function setAlert(msg){
     const el = $("alert");
-    if(!msg){
-      el.style.display = "none";
-      el.textContent = "";
-      return;
-    }
-    el.style.display = "block";
-    el.textContent = msg;
+    if(!msg){ el.style.display="none"; el.textContent=""; return; }
+    el.style.display="block"; el.textContent=msg;
   }
   function setLoading(on){
     $("loading").style.display = on ? "inline" : "none";
     $("searchBtn").disabled = on;
   }
-
-  // ====== API ======
-  async function apiSearch(){
-    const kw = ($("kw").value || DEFAULT_KW).trim();
-    const start = $("from").value || "";
-    const end = $("to").value || "";
-
-    const qs = new URLSearchParams({ kw, limit: "50", offset: "0" });
-    if(start) qs.set("start", start);
-    if(end) qs.set("end", end);
-
-    const r = await fetch(`/api/speech/search?${qs.toString()}`, { headers: { "Accept": "application/json" }});
-    const ct = r.headers.get("content-type") || "";
-    const text = await r.text();
-    if(!r.ok){
-      throw new Error(`API ${r.status}: ${text.slice(0,300)}`);
-    }
-    if(ct.includes("application/json")){
-      return JSON.parse(text);
-    }
-    throw new Error("API response is not JSON");
+  function setLoadMore(on, hasMore){
+    const btn = $("loadMoreBtn");
+    if(!hasMore){ btn.style.display="none"; return; }
+    btn.style.display="inline-flex";
+    btn.disabled = on;
   }
 
-  // ====== 차트 ======
-  let chart = null;
+  // ====== escape / highlight ======
+  function escapeHtml(s){
+    return String(s)
+      .replaceAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;")
+      .replaceAll("'","&#39;");
+  }
+  function escapeRegExp(s){
+    return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  function highlightEscaped(escapedText, kw){
+    if(!kw) return escapedText;
+    const re = new RegExp(escapeRegExp(kw), "gi");
+    return escapedText.replace(re, (m)=>`<mark class="kwMark">${m}</mark>`);
+  }
 
+  // ====== API ======
+function sleep(ms){ return new Promise(res => setTimeout(res, ms)); }
+
+function isStatementTimeoutError(err){
+  const msg = (err && err.message) ? String(err.message) : "";
+  // 57014 or "statement timeout" 문구 둘 다 방어
+  return msg.includes('"code":"57014"') || msg.includes("57014") || msg.toLowerCase().includes("statement timeout");
+}
+
+async function apiSearch({kw, start, end, limit, offset, includeSeries, includeWidgets}){
+  const qs = new URLSearchParams({
+    kw,
+    limit: String(limit),
+    offset: String(offset),
+    include_series: includeSeries ? "true" : "false",
+    include_widgets: includeWidgets ? "true" : "false",
+  });
+  if(start) qs.set("start", start);
+  if(end) qs.set("end", end);
+
+  const url = `/api/speech/search?${qs.toString()}`;
+
+  // 최대 3번 시도(첫 시도 + 실패 시 2번 재시도)
+  let lastErr = null;
+
+  for(let attempt=1; attempt<=3; attempt++){
+    try{
+      const r = await fetch(url, { headers: { "Accept": "application/json" }});
+      const ct = r.headers.get("content-type") || "";
+      const text = await r.text();
+
+      if(!r.ok){
+        throw new Error(`API ${r.status}: ${text.slice(0,300)}`);
+      }
+      if(!ct.includes("application/json")){
+        throw new Error("API response is not JSON");
+      }
+      return JSON.parse(text);
+    }catch(e){
+      lastErr = e;
+
+      // timeout류면 재시도, 아니면 즉시 throw (불필요한 3연타 방지)
+      if(isStatementTimeoutError(e)){
+        if(attempt < 3){
+          // 1회 실패: 400ms, 2회 실패: 900ms 정도 백오프
+          await sleep(attempt === 1 ? 400 : 900);
+          continue;
+        }
+      }
+      throw e;
+    }
+  }
+
+  throw lastErr || new Error("Unknown error");
+}
+
+  // ====== Chart ======
+  let chart = null;
   function renderChart(series, startYmd, endYmd){
-    // series: [{month:"YYYY-MM",count:n}, ...]
     const s = Array.isArray(series) ? series.slice() : [];
     s.sort((a,b)=> (a.month||"").localeCompare(b.month||""));
 
     const fromM = ymdToMonth(startYmd);
     const toM   = ymdToMonth(endYmd);
-
     const labels = monthSeq(fromM, toM);
+
     const map = new Map(s.map(x => [x.month, Number(x.count||0)]));
     const data = labels.map(m => map.get(m) ?? 0);
 
     const ctx = $("tsChart").getContext("2d");
     if(chart) chart.destroy();
-
     chart = new Chart(ctx, {
       type: "bar",
       data: {
         labels,
-        datasets: [{
-          label: "발언 수(월)",
-          data,
-          borderWidth: 0
-        }]
+        datasets: [{ data, borderWidth: 0 }]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: { mode: "index", intersect: false }
-        },
+        plugins: { legend: { display: false }, tooltip: { mode: "index", intersect: false } },
         scales: {
           x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 12 } },
           y: { beginAtZero: true, grid: { color: "#eef2f7" } }
         }
       }
     });
-
-    $("totalCount").textContent = data.reduce((a,b)=>a+b,0).toLocaleString();
   }
 
-  // ====== 카드 ======
-  function renderCards(rows){
-    const wrap = $("cards");
-    wrap.innerHTML = "";
+  // ====== Cards ======
+  function renderCardsReset(){
+    $("cards").innerHTML = "";
+  }
 
+  function appendCards(rows, kw){
+    const wrap = $("cards");
     const list = Array.isArray(rows) ? rows.slice() : [];
     list.sort((a,b) => (b.date||"").localeCompare(a.date||""));
-
-    $("noResult").style.display = list.length ? "none" : "block";
 
     for(const r of list){
       const sessionNum = (r.session != null) ? String(r.session) :
@@ -317,80 +394,222 @@
       const name  = (r.speaker_name || "-").trim();
       const pos   = (r.speaker_position || "-").trim();
       const date  = (r.date || "-").trim();
+      const meetingNo = (r.meeting_no || "").trim();
 
-      // ✅ meeting_no(제1호 등) 표시하지 않음
+      const fullText = r.speech_text || "";
+      const snippetText = r.snippet_text || fullText;
+      const snippetTrunc = !!r.snippet_truncated;
+
+      const escSnippet = highlightEscaped(escapeHtml(snippetText), kw);
+      const escFull = highlightEscaped(escapeHtml(fullText), kw);
+
       const card = document.createElement("div");
       card.className = "speechCard";
+
       card.innerHTML = `
         <div class="speechTop">
-          <div class="whoBox">
-            <span class="name">${escapeHtml(name)}</span>
-            <span class="pos">${escapeHtml(pos)}</span>
-            <span class="dot">·</span>
-            <span class="pos">${escapeHtml(party)}</span>
+          <div class="leftMeta">
+            <div class="whoBox">
+              <span class="name">${escapeHtml(name)}</span>
+              <span class="pos">${escapeHtml(pos)}</span>
+              <span class="pos">· ${escapeHtml(party)} · ${escapeHtml(sessionNum)}회</span>
+            </div>
           </div>
-          <div class="metaBox">
-            <span>${escapeHtml(sessionNum)}회</span>
-            <span class="dot">·</span>
-            <span>${escapeHtml(date)}</span>
+          <div class="rightMeta">
+            ${meetingNo ? `<span class="tag meeting">${escapeHtml(meetingNo)}</span>` : ``}
+            <span class="tag date">${escapeHtml(date)}</span>
           </div>
         </div>
-        <div class="text">${escapeHtml(r.speech_text || "")}</div>
+
+        <div class="text collapsed" data-mode="snippet">${escSnippet}</div>
+
+        <div class="moreRow">
+          ${snippetTrunc ? `<button class="moreBtn" type="button">펼치기</button>` : ``}
+        </div>
       `;
+
+      const textEl = card.querySelector(".text");
+      const moreBtn = card.querySelector(".moreBtn");
+
+      if(moreBtn){
+        moreBtn.addEventListener("click", ()=>{
+          const mode = textEl.getAttribute("data-mode");
+          if(mode === "snippet"){
+            textEl.setAttribute("data-mode", "full");
+            textEl.classList.remove("collapsed");
+            textEl.innerHTML = escFull;
+            moreBtn.textContent = "접기";
+          }else{
+            textEl.setAttribute("data-mode", "snippet");
+            textEl.classList.add("collapsed");
+            textEl.innerHTML = escSnippet;
+            moreBtn.textContent = "펼치기";
+          }
+        });
+      }else{
+        textEl.classList.remove("collapsed");
+        textEl.innerHTML = escSnippet;
+      }
+
       wrap.appendChild(card);
     }
   }
 
-  function escapeHtml(s){
-    return String(s)
-      .replaceAll("&","&amp;")
-      .replaceAll("<","&lt;")
-      .replaceAll(">","&gt;")
-      .replaceAll('"',"&quot;")
-      .replaceAll("'","&#39;");
+  // ====== Right widgets ======
+  function renderWidgets(w){
+    // Top speakers
+    const topWrap = $("topSpeakersList");
+    const top = (w && Array.isArray(w.top_speakers)) ? w.top_speakers : [];
+    if(!top.length){
+      topWrap.innerHTML = `<div class="muted">-</div>`;
+    }else{
+      topWrap.innerHTML = top.map(x => `
+        <div class="wItem">
+          <div class="left">
+            <b>${escapeHtml(x.name || "-")}</b>
+            <div>${escapeHtml(x.position || "-")} · ${escapeHtml(x.party || "-")}</div>
+          </div>
+          <div class="right">${Number(x.count||0).toLocaleString()}회</div>
+        </div>
+      `).join("");
+    }
+
+    // Peak month
+    const pm = w && w.peak_month ? w.peak_month : {month:null,count:0};
+    $("peakMonth").textContent = pm.month || "-";
+    $("peakCount").textContent = pm.month ? `${Number(pm.count||0).toLocaleString()}회` : "-";
+
+    // Recent 6 months
+    const r6 = (w && Array.isArray(w.recent_6m)) ? w.recent_6m : [];
+    const rWrap = $("recent6List");
+    if(!r6.length){
+      rWrap.innerHTML = `<div class="muted">-</div>`;
+    }else{
+      rWrap.innerHTML = r6.map(x => `
+        <div class="wItem">
+          <div class="left"><b>${escapeHtml(x.month || "-")}</b></div>
+          <div class="right">${Number(x.count||0).toLocaleString()}회</div>
+        </div>
+      `).join("");
+    }
   }
 
-  // ====== 전체 적용 ======
-  function applyPayload(p){
-    $("kw").value = p.keyword || $("kw").value || DEFAULT_KW;
-    if(p.start) $("from").value = p.start;
-    if(p.end) $("to").value = p.end;
+  // ====== State ======
+  const state = {
+    kw: DEFAULT_KW,
+    start: "",
+    end: "",
+    nextOffset: 0,
+    hasMore: false,
+    loadingMore: false,
+  };
 
-    renderChart(p.series || [], p.start || "", p.end || "");
-    renderCards(p.speeches || []);
+  // ====== Apply payload ======
+  function applyFirstPayload(p){
+    state.kw = p.keyword || state.kw || DEFAULT_KW;
+    state.start = p.start || "";
+    state.end = p.end || "";
+    state.nextOffset = Number(p.next_offset || 0);
+    state.hasMore = !!p.has_more;
+
+    $("kw").value = state.kw;
+    if(state.start) $("from").value = state.start;
+    if(state.end) $("to").value = state.end;
+
+    $("rangeHint").textContent = `조회 구간: ${fmtRange(state.start, state.end)} · 키워드: ${state.kw}`;
+    $("listHint").textContent = "최신순";
+
+    renderChart(p.series || [], state.start, state.end);
+
+    renderCardsReset();
+    appendCards(p.speeches || [], state.kw);
+
+    $("noResult").style.display = (p.speeches && p.speeches.length) ? "none" : "block";
+
+    renderWidgets(p.widgets || {});
+
+    setLoadMore(false, state.hasMore);
   }
 
-  async function run(){
+  function applyMorePayload(p){
+    state.nextOffset = Number(p.next_offset || state.nextOffset);
+    state.hasMore = !!p.has_more;
+
+    appendCards(p.speeches || [], state.kw);
+
+    setLoadMore(false, state.hasMore);
+  }
+
+  // ====== Run ======
+  async function runSearch(){
     setAlert("");
     setLoading(true);
     try{
-      const payload = await apiSearch();
-      applyPayload(payload);
+      const kw = ($("kw").value || DEFAULT_KW).trim();
+      const start = $("from").value || "";
+      const end = $("to").value || "";
+
+      const payload = await apiSearch({
+        kw, start, end,
+        limit: PAGE_LIMIT,
+        offset: 0,
+        includeSeries: true,
+        includeWidgets: true,
+      });
+
+      applyFirstPayload(payload);
     }catch(e){
       console.error(e);
-      setAlert(`조회 실패: ${e.message}`);
+      if(isStatementTimeoutError(e)){
+        setAlert("요청이 많아 잠시 지연되고 있습니다. 잠시 후 다시 시도해 주세요.");
+      }else{
+        setAlert(`조회 실패: ${e.message}`);
+      }
     }finally{
       setLoading(false);
     }
   }
 
-  // 초기 로딩: 화면표시는 안 하지만 기본 키워드로 조회
+  async function loadMore(){
+    if(state.loadingMore || !state.hasMore) return;
+    state.loadingMore = true;
+    setLoadMore(true, true);
+
+    try{
+      const payload = await apiSearch({
+        kw: state.kw,
+        start: state.start,
+        end: state.end,
+        limit: PAGE_LIMIT,
+        offset: state.nextOffset,
+        includeSeries: false,    // 더 불러올 때는 차트/집계 재계산 안 함
+        includeWidgets: false,   // 위젯도 첫 호출에서만
+      });
+      applyMorePayload(payload);
+    }catch(e){
+      console.error(e);
+      setAlert(`추가 로딩 실패: ${e.message}`);
+    }finally{
+      state.loadingMore = false;
+    }
+  }
+
+  // 초기 로딩
   window.addEventListener("DOMContentLoaded", () => {
-  const qs = new URLSearchParams(location.search);
-
-  const kw = (qs.get("kw") || "").trim();
-  const start = (qs.get("start") || "").trim();
-  const end = (qs.get("end") || "").trim();
-
-  $("kw").value = kw || DEFAULT_KW;
-  if (start) $("from").value = start;
-  if (end) $("to").value = end;
-
-  run();
+    $("kw").value = DEFAULT_KW;
+    runSearch();
   });
 
-  $("searchBtn").addEventListener("click", run);
-  $("kw").addEventListener("keydown", (e)=>{ if(e.key==="Enter") run(); });
+  $("searchBtn").addEventListener("click", runSearch);
+  $("kw").addEventListener("keydown", (e)=>{ if(e.key==="Enter") runSearch(); });
+  $("loadMoreBtn").addEventListener("click", loadMore);
+
+  // 스크롤 하단 근처 자동 로딩(원치 않으면 이 블록 삭제)
+  window.addEventListener("scroll", ()=>{
+    if(!state.hasMore || state.loadingMore) return;
+    const nearBottom = (window.innerHeight + window.scrollY) >= (document.body.offsetHeight - 800);
+    if(nearBottom) loadMore();
+  });
 </script>
 </body>
 </html>

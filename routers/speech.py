@@ -1,6 +1,6 @@
 # routers/speech.py
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import datetime
 from typing import Optional, Dict, Any, List, Tuple
 
@@ -13,13 +13,13 @@ router = APIRouter(prefix="/api/speech", tags=["speech"])
 
 TABLE = TABLES.get("speeches", "speeches")
 
-# Supabase(PostgREST)에서 실질적으로 1000행 cap이 걸리는 경우가 많아서
-# 안전하게 "페이지 단위"로 끝까지 가져오는 방식으로 고칩니다.
+# Supabase(PostgREST)에서 1000행 cap이 걸리는 경우가 많아서 페이지로 끝까지 가져옴
 PAGE_SIZE = 1000
 
-# 혹시 키워드가 너무 광범위해서 무한히 커질 수 있으니 서버 보호용 상한
-MAX_AGG_ROWS = 300_000      # 집계용(날짜만) 최대 수집 행수
-MAX_SPEECH_ROWS = 20_000    # 목록용 최대 수집 행수
+# 서버 보호용 상한
+MAX_AGG_ROWS = 300_000       # 차트/월집계용(date만) 최대 수집 행수
+MAX_SPEECH_ROWS = 20_000     # 목록용 최대 수집 행수
+MAX_WIDGET_ROWS = 120_000    # 위젯(Top 발언자) 계산용 최대 수집 행수
 
 
 def _validate_date(s: Optional[str]) -> Optional[str]:
@@ -39,7 +39,6 @@ def _month_range(start_ymd: str, end_ymd: str) -> List[str]:
     cur = s
     while cur <= e:
         months.append(cur.strftime("%Y-%m"))
-        # 다음 달로 이동
         if cur.month == 12:
             cur = cur.replace(year=cur.year + 1, month=1)
         else:
@@ -79,9 +78,6 @@ async def _paged_select_all(
     order: str,
     hard_cap: int,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """
-    Supabase 결과 1000행 cap 대비: offset을 늘려가며 끝까지 수집.
-    """
     out: List[Dict[str, Any]] = []
     offset = 0
     pages = 0
@@ -104,13 +100,11 @@ async def _paged_select_all(
 
         out.extend(rows)
 
-        # 마지막 페이지면 종료
         if len(rows) < PAGE_SIZE:
             break
 
         offset += PAGE_SIZE
 
-        # 서버 보호용 상한
         if len(out) >= hard_cap:
             out = out[:hard_cap]
             truncated = True
@@ -123,6 +117,99 @@ async def _paged_select_all(
         "truncated": truncated,
         "hard_cap": hard_cap,
     }
+
+
+# ---- 스니펫 유틸: 키워드 기준 ±2문장 (총 5문장) ----
+_SENT_SPLIT = re.compile(r"(?<=[.!?…])\s+|\n+")
+
+def _make_snippet(text: str, kw: str, window: int = 2, max_sent: int = 5) -> Tuple[str, bool]:
+    if not text or not kw:
+        return (text or ""), False
+
+    sents = [s.strip() for s in _SENT_SPLIT.split(text) if s.strip()]
+    if not sents:
+        return text, False
+
+    pat = re.compile(re.escape(kw), re.IGNORECASE)
+    idx = None
+    for i, s in enumerate(sents):
+        if pat.search(s):
+            idx = i
+            break
+
+    if idx is None:
+        clip = " ".join(sents[:max_sent])
+        truncated = len(sents) > max_sent
+        return clip, truncated
+
+    start_i = max(0, idx - window)
+    end_i = min(len(sents), start_i + max_sent)
+    start_i = max(0, end_i - max_sent)
+
+    clip_sents = sents[start_i:end_i]
+    clip = " ".join(clip_sents)
+    truncated = (start_i > 0) or (end_i < len(sents))
+    return clip, truncated
+
+
+def _build_widgets_from_series(series: List[Dict[str, Any]]) -> Dict[str, Any]:
+    # 피크 월
+    peak_month = None
+    peak_count = 0
+    if series:
+        # 동률이면 "더 최신 월"을 피크로
+        peak = max(series, key=lambda x: (int(x.get("count", 0)), x.get("month", "")))
+        peak_month = peak.get("month")
+        peak_count = int(peak.get("count", 0))
+
+    # 최근 6개월(시리즈는 이미 전체 월이 들어오므로 뒤에서 6개)
+    last6 = series[-6:] if series else []
+    recent_6m = [{"month": x.get("month"), "count": int(x.get("count", 0))} for x in last6]
+
+    return {
+        "peak_month": {"month": peak_month, "count": peak_count},
+        "recent_6m": recent_6m,
+    }
+
+
+async def _top_speakers_for_kw_range(
+    base_where: Dict[str, Any],
+    end: str,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    # speaker_name 기준 Top5 (party/position은 최빈값으로 붙임)
+    rows, meta = await _paged_select_all(
+        select_cols="date,speaker_name,speaker_position,party",
+        where_params=base_where,
+        order="date.asc",
+        hard_cap=MAX_WIDGET_ROWS,
+    )
+    if end:
+        rows = [r for r in rows if (r.get("date") or "") <= end]
+
+    cnt = Counter()
+    party_mode = defaultdict(Counter)
+    pos_mode = defaultdict(Counter)
+
+    for r in rows:
+        name = (r.get("speaker_name") or "").strip()
+        if not name:
+            continue
+        cnt[name] += 1
+        party_mode[name][(r.get("party") or "").strip() or "-"] += 1
+        pos_mode[name][(r.get("speaker_position") or "").strip() or "-"] += 1
+
+    top = []
+    for name, c in cnt.most_common(5):
+        party = party_mode[name].most_common(1)[0][0] if party_mode[name] else "-"
+        pos = pos_mode[name].most_common(1)[0][0] if pos_mode[name] else "-"
+        top.append({"name": name, "party": party, "position": pos, "count": int(c)})
+
+    note = {
+        "used_rows": len(rows),
+        "paging": meta,
+        "truncated": bool(meta.get("truncated")),
+    }
+    return top, note
 
 
 @router.get("/range")
@@ -141,9 +228,10 @@ async def speech_search(
     kw: str = Query(..., min_length=1),
     start: Optional[str] = Query(None, description="YYYY-MM-DD"),
     end: Optional[str] = Query(None, description="YYYY-MM-DD"),
-    limit: int = Query(200, ge=1, le=5000),   # 프론트에서 한 번에 많이 받고 싶으면 5000까지 허용
+    limit: int = Query(200, ge=1, le=5000),
     offset: int = Query(0, ge=0),
     include_series: bool = Query(True, description="차트 집계 포함 여부"),
+    include_widgets: bool = Query(True, description="오른쪽 위젯(Top/피크/최근6개월) 계산 포함 여부"),
 ):
     try:
         start = _validate_date(start)
@@ -153,15 +241,22 @@ async def speech_search(
         if not start or not end:
             mn, mx = await _min_max_date_for_kw(kw)
             if not mn or not mx:
-                return {"keyword": kw, "start": None, "end": None, "bucket": "month", "series": [], "speeches": []}
+                return {
+                    "keyword": kw,
+                    "start": None,
+                    "end": None,
+                    "bucket": "month",
+                    "series": [],
+                    "speeches": [],
+                    "next_offset": offset,
+                    "has_more": False,
+                    "widgets": {"top_speakers": [], "peak_month": {"month": None, "count": 0}, "recent_6m": []},
+                }
             start = start or mn
             end = end or mx
 
         like = f"%{kw}%"
 
-        # -------------------------
-        # 1) 발언 목록(최신순) - "1000행 cap" 대비하여 내부에서 페이지로 수집
-        # -------------------------
         cols = (
             "speech_id,session,session_dir,meeting_no,date,"
             "speaker_name,speaker_position,party,speech_text,speech_order"
@@ -172,13 +267,14 @@ async def speech_search(
             "date": f"gte.{start}",
         }
 
-        # offset부터 limit개만 가져오되, PAGE_SIZE 단위로 반복 호출해서 채움
-        # (Supabase가 limit를 1000으로 잘라도, 우리는 다음 offset으로 이어서 가져옴)
+        # -------------------------
+        # 1) 발언 목록(최신순) - offset부터 limit개만
+        # -------------------------
         need = limit
         collected: List[Dict[str, Any]] = []
         cur_offset = offset
         pages = 0
-        truncated = False
+        hard_cap_hit = False
 
         while len(collected) < need:
             chunk = min(PAGE_SIZE, need - len(collected))
@@ -195,36 +291,45 @@ async def speech_search(
             if not rows:
                 break
 
-            # end는 dict filter 한계 때문에 서버에서 post-filter
+            # end는 PostgREST 필터 조합 제약 때문에 서버에서 post-filter
             if end:
                 rows = [r for r in rows if (r.get("date") or "") <= end]
 
+            # 스니펫(원문 유지 + snippet_text/snippet_truncated)
+            for r in rows:
+                txt = r.get("speech_text") or ""
+                snippet, trunc = _make_snippet(txt, kw, window=2, max_sent=5)
+                r["snippet_text"] = snippet
+                r["snippet_truncated"] = trunc
+
             collected.extend(rows)
 
-            # 더 이상 가져올 게 없으면 종료
             if len(rows) < chunk:
                 break
 
             cur_offset += chunk
 
-            # 서버 보호용 상한
             if len(collected) >= MAX_SPEECH_ROWS:
                 collected = collected[:MAX_SPEECH_ROWS]
-                truncated = True
+                hard_cap_hit = True
                 break
+
+        returned = len(collected)
+        next_offset = offset + returned
+        has_more = (returned == limit) and (not hard_cap_hit)
 
         speeches_note = {
             "requested_limit": limit,
             "requested_offset": offset,
-            "returned": len(collected),
+            "returned": returned,
             "pages": pages,
             "page_size": PAGE_SIZE,
             "hard_cap": MAX_SPEECH_ROWS,
-            "hard_cap_hit": truncated,
+            "hard_cap_hit": hard_cap_hit,
         }
 
         # -------------------------
-        # 2) 월별 집계(series) - 날짜만 "끝까지" 페이지로 수집 후 Counter
+        # 2) 월별 집계(series)
         # -------------------------
         series: List[Dict[str, Any]] = []
         series_note: Dict[str, Any] = {}
@@ -236,7 +341,6 @@ async def speech_search(
                 order="date.asc",
                 hard_cap=MAX_AGG_ROWS,
             )
-
             if end:
                 dates_only = [r for r in dates_only if (r.get("date") or "") <= end]
 
@@ -246,7 +350,6 @@ async def speech_search(
                 if d:
                     c[d[:7]] += 1
 
-            # 빈 달도 0으로 채워서 프론트에서 “뒤가 0으로만 보이는 착시” 방지
             months = _month_range(start, end)
             series = [{"month": m, "count": int(c.get(m, 0))} for m in months]
 
@@ -255,6 +358,25 @@ async def speech_search(
                 "paging": meta,
             }
 
+        # -------------------------
+        # 3) 오른쪽 위젯(Top 발언자 / 피크 월 / 최근 6개월)
+        #    - "첫 페이지 + include_widgets=true"일 때만 계산 권장(부하 방지)
+        # -------------------------
+        widgets = {
+            "top_speakers": [],
+            "peak_month": {"month": None, "count": 0},
+            "recent_6m": [],
+        }
+        widgets_note: Dict[str, Any] = {}
+
+        if include_series:
+            widgets.update(_build_widgets_from_series(series))
+
+        if include_widgets:
+            top, top_note = await _top_speakers_for_kw_range(base_where=base_where, end=end)
+            widgets["top_speakers"] = top
+            widgets_note["top_speakers"] = top_note
+
         return {
             "keyword": kw,
             "start": start,
@@ -262,9 +384,13 @@ async def speech_search(
             "bucket": "month",
             "series": series,
             "speeches": collected,
+            "next_offset": next_offset,
+            "has_more": has_more,
+            "widgets": widgets,
             "note": {
                 "speeches": speeches_note,
                 "series": series_note,
+                "widgets": widgets_note,
             },
         }
 

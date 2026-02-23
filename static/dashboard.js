@@ -32,9 +32,6 @@ const state = {
 
   // ✅ 트렌드: 적용 버튼 방식(변경 시 dirty)
   trendDirty: false,
-  // ✅ trend2 드릴다운 상태
-  trendLevel: "l2",
-  trendL2: null,
 };
 
 function uniq(arr){ return [...new Set(arr)]; }
@@ -651,6 +648,17 @@ function fillSelectOptions(sel, values, keepSelected=false){
 
 function markTrendDirty(){
   state.trendDirty = true;
+
+  // 기간이 바뀌면 항상 L2(대분류)로 복귀
+  if (state.trendLevel === "l3"){
+    state.trendLevel = "l2";
+    state.trendL2 = null;
+    const backBtn = document.getElementById("trendBack");
+    const labelEl = document.getElementById("trendLevelLabel");
+    if (backBtn) backBtn.style.display = "none";
+    if (labelEl) labelEl.textContent = "대분류";
+  }
+
   const btn = document.getElementById("trendApply");
   if (btn) btn.disabled = false;
 }
@@ -665,19 +673,18 @@ function buildTrend2Query(){
   const eq = document.getElementById("trendEndQ");
 
   const start_year = sy ? Number(sy.value) : null;
-  const start_quarter = sq ? Number(sq.value) : 1;
+  const start_quarter = sq ? Number(sq.value) : null;
   const end_year = ey ? Number(ey.value) : null;
-  const end_quarter = eq ? Number(eq.value) : 4;
+  const end_quarter = eq ? Number(eq.value) : null;
 
   const p = new URLSearchParams();
   p.set("group_by", group_by);
 
   if (start_year != null) p.set("start_year", String(start_year));
-  p.set("start_quarter", String(start_quarter));
+  if (start_quarter != null) p.set("start_quarter", String(start_quarter));
   if (end_year != null) p.set("end_year", String(end_year));
-  p.set("end_quarter", String(end_quarter));
+  if (end_quarter != null) p.set("end_quarter", String(end_quarter));
 
-  // L3 드릴다운이면, 선택된 L2로 범위 제한
   if (group_by === "l3" && state.trendL2){
     p.set("l2_eq", String(state.trendL2));
   }
@@ -721,7 +728,22 @@ function renderTrend2Line(divId, rows){
 
   Plotly.newPlot(divId, data, {
     title: { text: titleText, x: 0 },
-    xaxis: { tickangle: -20, automargin: true },
+    xaxis: {
+        tickangle: -20,
+        automargin: true,
+        // ✅ 라벨 개수가 많으면 간격 두고 표시
+        tickmode: "array",
+        tickvals: periods.filter((_, i) => {
+          const n = periods.length;
+          const step = (n > 40) ? 8 : (n > 28) ? 6 : (n > 16) ? 4 : 2; // 기간 길이에 따라 자동
+          return i % step === 0 || i === n - 1; // 마지막은 항상 표시
+        }),
+        ticktext: periods.filter((_, i) => {
+          const n = periods.length;
+          const step = (n > 40) ? 8 : (n > 28) ? 6 : (n > 16) ? 4 : 2;
+          return i % step === 0 || i === n - 1;
+        }),
+      },
     yaxis: { title: "건수", automargin: true },
     margin: { t: 50, r: 20, b: 210, l: 70 },
     legend: { orientation: "h", x: 0, y: -0.45, xanchor: "left", yanchor: "top" },
@@ -729,10 +751,16 @@ function renderTrend2Line(divId, rows){
     const plotEl = document.getElementById(divId);
     if (!plotEl) return;
 
-    // 범례 클릭으로 드릴다운 (L2 -> L3)
+    // 중복 바인딩 제거
     try { plotEl.removeAllListeners?.("plotly_legendclick"); } catch (_) {}
+    try { plotEl.removeAllListeners?.("plotly_legenddoubleclick"); } catch (_) {}
 
+    // ✅ 더블클릭 기본 동작 방지(레이스/꼬임 차단)
+    plotEl.on("plotly_legenddoubleclick", () => false);
+
+    // ✅ 범례 클릭: L2 -> L3 드릴다운
     plotEl.on("plotly_legendclick", async (ev) => {
+      if (state.trendLoading) return false;
       if (state.trendLevel !== "l2") return false;
 
       const selectedL2 = (ev?.curveNumber != null) ? (data?.[ev.curveNumber]?.name) : null;
@@ -746,11 +774,8 @@ function renderTrend2Line(divId, rows){
       if (backBtn) backBtn.style.display = "inline-flex";
       if (labelEl) labelEl.textContent = `소분류: ${selectedL2}`;
 
-      const applyBtn = document.getElementById("trendApply");
-      if (applyBtn) applyBtn.disabled = true;
-
       await loadTrend2();
-      return false; // 기본 legend 토글 막기
+      return false; // 기본 범례 토글 막기
     });
   });
 }
@@ -760,7 +785,6 @@ async function initTrend2Controls(){
   state.trend2Options = opts;
 
   const years = (opts.years || []).map(String);
-
   const startY = document.getElementById("trendStartY");
   const endY   = document.getElementById("trendEndY");
   const startQ = document.getElementById("trendStartQ");
@@ -775,31 +799,26 @@ async function initTrend2Controls(){
     }
   }
 
-  // 기본값: 전체 범위(min~max)
+  // ✅ 기본: 전 구간(min~max)로 초기 렌더
   if (opts.min && opts.max){
     if (startY) startY.value = String(opts.min.year);
     if (startQ) startQ.value = String(opts.min.quarter);
     if (endY)   endY.value   = String(opts.max.year);
     if (endQ)   endQ.value   = String(opts.max.quarter);
-  } else if (years.length){
-    if (startY) startY.value = years[0];
-    if (startQ) startQ.value = "1";
-    if (endY)   endY.value   = years[years.length-1];
-    if (endQ)   endQ.value   = "4";
   }
 
-  // 초기 상태
   state.trendLevel = "l2";
   state.trendL2 = null;
+  state.trendLoading = false;
   state.trendDirty = false;
-
-  const applyBtn = document.getElementById("trendApply");
-  if (applyBtn) applyBtn.disabled = true;
 
   const backBtn = document.getElementById("trendBack");
   const labelEl = document.getElementById("trendLevelLabel");
   if (backBtn) backBtn.style.display = "none";
   if (labelEl) labelEl.textContent = "대분류";
+
+  const applyBtn = document.getElementById("trendApply");
+  if (applyBtn) applyBtn.disabled = false;
 }
 
 async function reloadL3Options(){
@@ -813,9 +832,20 @@ async function reloadL3Options(){
 }
 
 async function loadTrend2(){
-  const q = buildTrend2Query();
-  const rows = await fetchJSON("/api/trend2/series?" + q);
-  renderTrend2Line("plot_trend", rows);
+  if (state.trendLoading) return;
+  state.trendLoading = true;
+
+  const loading = document.getElementById("loadingTrend");
+  if (loading) loading.style.display = "inline-flex";
+
+  try{
+    const q = buildTrend2Query();
+    const rows = await fetchJSON("/api/trend2/series?" + q);
+    renderTrend2Line("plot_trend", rows);
+  } finally {
+    state.trendLoading = false;
+    if (loading) loading.style.display = "none";
+  }
 }
 
 /* =========================
@@ -855,7 +885,7 @@ function renderPartyBarAll(divId, rows){
 
 async function loadPartyMetrics(){
   try{
-    const partyRows = await fetchJSON("/api/party-domain-metrics?limit=5000");
+    const partyRows = await fetchJSON("/api/party-domain-metrics?limit=1000");
     renderPartyBarAll("plot_party", partyRows);
   } catch(e){
     setErr("plot_party", String(e));
@@ -1205,7 +1235,7 @@ document.getElementById("assemblySel")?.addEventListener("change", async (e) => 
   await refreshBoth();
 });
 
-document.getElementById("sessionSel")?.addEventListener("change", async (e) => {
+document.getElementById("sessionSel").addEventListener("change", async (e) => {
   state.sessionNo = Number(e.target.value);
 
   state.shown.people = state.more.people;
@@ -1219,12 +1249,12 @@ document.getElementById("sessionSel")?.addEventListener("change", async (e) => {
   await refreshBoth();
 });
 
-document.getElementById("partySel")?.addEventListener("change", (e) => {
+document.getElementById("partySel").addEventListener("change", (e) => {
   state.party = String(e.target.value || "");
   renderRecapFromLast();
 });
 
-document.getElementById("q")?.addEventListener("input", (e) => {
+document.getElementById("q").addEventListener("input", (e) => {
   state.q = String(e.target.value || "");
   renderRecapFromLast();
 });
@@ -1286,11 +1316,11 @@ document.getElementById("qSessionSel")?.addEventListener("change", async (e) => 
 });
 
 /* =========================
-   ✅ trend2 UI 동작(새로 구현)
+   ✅ trend2 UI 동작(vfinal)
    - 시작/끝 연도·분기 선택
-   - 적용 버튼으로 L2 그래프 렌더
-   - 범례 클릭 시 해당 L2의 L3 그래프 렌더
-   - ← 대분류로 복귀
+   - [적용] → 항상 L2(대분류)로 리셋 후 조회
+   - 범례 클릭 → 소분류(L3) 드릴다운
+   - [← 대분류] → L2로 복귀
    ========================= */
 document.getElementById("trendStartY")?.addEventListener("change", markTrendDirty);
 document.getElementById("trendStartQ")?.addEventListener("change", markTrendDirty);
@@ -1312,6 +1342,8 @@ document.getElementById("trendApply")?.addEventListener("click", async () => {
   if (applyBtn) applyBtn.disabled = true;
 
   await loadTrend2();
+
+  if (applyBtn) applyBtn.disabled = false;
 });
 
 document.getElementById("trendBack")?.addEventListener("click", async () => {
@@ -1322,10 +1354,6 @@ document.getElementById("trendBack")?.addEventListener("click", async () => {
   const labelEl = document.getElementById("trendLevelLabel");
   if (backBtn) backBtn.style.display = "none";
   if (labelEl) labelEl.textContent = "대분류";
-
-  state.trendDirty = false;
-  const applyBtn = document.getElementById("trendApply");
-  if (applyBtn) applyBtn.disabled = true;
 
   await loadTrend2();
 });
@@ -1354,9 +1382,7 @@ document.getElementById("trendBack")?.addEventListener("click", async () => {
   
   // ✅ trend2 UI 초기화
   await initTrend2Controls();
-
   // preset 기본: 최근 8분기 → 직접선택 비활성
-
   // 초기 1회 렌더(바로 보여주기)
   await loadTrend2();
 

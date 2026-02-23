@@ -240,14 +240,16 @@ async def api_trend2_series(
         if l3_in_list:
             base_params["label_l3"] = _quote_in(l3_in_list)
 
-    page_size = 50000
+    PAGE_SIZE = 1000  # ✅ PostgREST 상한(보통 1000) 대응
+    HARD_CAP = 600_000  # 안전 상한(필요시 조정)
     offset = 0
     agg = defaultdict(int)
     stop = False
+    collected = 0
 
     while True:
         params = dict(base_params)
-        params["limit"] = page_size
+        params["limit"] = PAGE_SIZE
         params["offset"] = offset
         page = await sb_select(TABLE, params)
 
@@ -284,11 +286,16 @@ async def api_trend2_series(
         if stop:
             break
 
-        if len(page) < page_size:
+        offset += len(page)
+        collected += len(page)
+
+        # 마지막 페이지
+        if len(page) < PAGE_SIZE:
             break
 
-        offset += page_size
-
+        # 안전 상한
+        if collected >= HARD_CAP:
+            break
     out = [{"period": p, "label": l, "count": c} for (p, l), c in agg.items()]
     out.sort(key=lambda x: (x["period"], x["label"]))
     return out

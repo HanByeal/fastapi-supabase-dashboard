@@ -32,7 +32,7 @@
       font-weight:900;font-size:13px;letter-spacing:-0.2px;
     }
     .muted{color:#64748b;font-size:12px;font-weight:800;}
-    .controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+    .controls{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;}
     .field{display:inline-flex;flex-direction:column;gap:6px;}
     .label{font-size:12px;color:#555;font-weight:800;}
     input{
@@ -516,7 +516,7 @@ async function apiSearch({kw, start, end, limit, offset, includeSeries, includeW
     if(state.start) $("from").value = state.start;
     if(state.end) $("to").value = state.end;
 
-    $("rangeHint").textContent = `조회 구간: ${fmtRange(state.start, state.end)} · 키워드: ${state.kw}`;
+    $("rangeHint").textContent = `${fmtRange(state.start, state.end)} · ${state.kw}`;
     $("listHint").textContent = "최신순";
 
     renderChart(p.series || [], state.start, state.end);
@@ -548,6 +548,12 @@ async function apiSearch({kw, start, end, limit, offset, includeSeries, includeW
       const kw = ($("kw").value || DEFAULT_KW).trim();
       const start = $("from").value || "";
       const end = $("to").value || "";
+
+      const newQS = new URLSearchParams();
+      newQS.set("kw", kw);
+      if(start) newQS.set("start", start);
+      if(end) newQS.set("end", end);
+      history.replaceState(null, "", `${location.pathname}?${newQS.toString()}`);
 
       const payload = await apiSearch({
         kw, start, end,
@@ -594,9 +600,26 @@ async function apiSearch({kw, start, end, limit, offset, includeSeries, includeW
     }
   }
 
-  // 초기 로딩
+  function getQS(){
+    const qs = new URLSearchParams(window.location.search);
+    return {
+      kw: (qs.get("kw") || "").trim(),
+      start: (qs.get("start") || "").trim(),
+      end: (qs.get("end") || "").trim(),
+    };
+  }
+
   window.addEventListener("DOMContentLoaded", () => {
-    $("kw").value = DEFAULT_KW;
+    const q = getQS();
+
+    // 1) URL kw가 있으면 그걸 우선, 없으면 DEFAULT_KW
+    const initKw = q.kw || DEFAULT_KW;
+    $("kw").value = initKw;
+
+    // 2) start/end도 URL로 넘겼으면 반영 (선택)
+    if(q.start) $("from").value = q.start;
+    if(q.end) $("to").value = q.end;
+
     runSearch();
   });
 

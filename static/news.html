@@ -425,7 +425,8 @@
 
     // ====== render ======
     function renderSidebar(issues) {
-      const top = issues.slice(0, 12);
+      const top = issues.slice(0, 10);
+      // 최신 12->10
       const side = document.getElementById('sideList');
       if (!top.length) {
         side.innerHTML = '<div class="muted">표시할 항목이 없습니다.</div>';

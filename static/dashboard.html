@@ -385,8 +385,7 @@ window.addEventListener("unhandledrejection", (e) => {
             <h3>주요 트렌드 · 정당별 관심</h3>
 
             <div style="display:flex; gap:10px; align-items:center;">
-              <button id="trendApply" class="applyBtn" disabled>적용</button>
-              <span id="loadingTrend" class="cardLoading" style="display:none;">
+<span id="loadingTrend" class="cardLoading" style="display:none;">
                 <span class="miniSpin"></span> 로딩 중…
               </span>
             </div>
@@ -394,84 +393,26 @@ window.addEventListener("unhandledrejection", (e) => {
 
           <!-- ✅ 기간 중심 UI (대수는 고급옵션으로 내림) -->
           <div class="trendControls">
-            <!-- 기간 프리셋 -->
-            <div class="selectWrap">
-              <span class="selectLabel">기간</span>
-              <select id="trendPreset" style="min-width:140px;">
-                <option value="recent_4">최근 4분기</option>
-                <option value="recent_8" selected>최근 8분기</option>
-                <option value="recent_12">최근 12분기</option>
-                <option value="custom">직접 선택</option>
-              </select>
-            </div>
+  <div class="selectWrap">
+    <span class="selectLabel">시작</span>
+    <select id="trendStartY"></select>
+    <select id="trendStartQ">
+      <option value="1">Q1</option><option value="2">Q2</option><option value="3">Q3</option><option value="4">Q4</option>
+    </select>
+  </div>
 
-            <!-- 직접 선택(연도/분기) -->
-            <div class="selectWrap">
-              <span class="selectLabel">시작</span>
-              <select id="trendStartY"></select>
-              <select id="trendStartQ">
-                <option value="1">Q1</option><option value="2">Q2</option><option value="3">Q3</option><option value="4">Q4</option>
-              </select>
-            </div>
+  <div class="selectWrap">
+    <span class="selectLabel">끝</span>
+    <select id="trendEndY"></select>
+    <select id="trendEndQ">
+      <option value="1">Q1</option><option value="2">Q2</option><option value="3">Q3</option><option value="4">Q4</option>
+    </select>
+  </div>
 
-            <div class="selectWrap">
-              <span class="selectLabel">끝</span>
-              <select id="trendEndY"></select>
-              <select id="trendEndQ">
-                <option value="1">Q1</option><option value="2">Q2</option><option value="3">Q3</option><option value="4">Q4</option>
-              </select>
-            </div>
-
-            <!-- ✅ 그룹(라벨 변경 + 줄 아래로 자연스럽게 배치되게) -->
-            <div class="radioWrap" style="margin-left: 0;">
-              <span>그룹</span>
-              <label style="display:inline-flex;gap:6px;align-items:center;">
-                <input type="radio" name="trendGroup" value="l2" checked />
-                대분류
-              </label>
-              <label style="display:inline-flex;gap:6px;align-items:center;">
-                <input type="radio" name="trendGroup" value="l3" />
-                소분류
-              </label>
-            </div>
-
-            <!-- 카테고리: L2 멀티 -->
-            <div class="selectWrap" id="wrapL2Multi">
-              <span class="selectLabel">대분류</span>
-              <select id="trendL2Multi" multiple size="1" style="min-width:220px;"></select>
-              <span class="hint">멀티</span>
-            </div>
-
-            <!-- 카테고리: L3일 때 (상위 L2 1개 + L3 멀티) -->
-            <div class="selectWrap" id="wrapL2One" style="display:none;">
-              <span class="selectLabel">상위 대분류</span>
-              <select id="trendL2One" style="min-width:220px;"></select>
-            </div>
-
-            <div class="selectWrap" id="wrapL3Multi" style="display:none;">
-              <span class="selectLabel">소분류</span>
-              <select id="trendL3Multi" multiple size="1" style="min-width:260px;"></select>
-              <span class="hint">멀티</span>
-            </div>
-
-            <!-- ✅ 고급옵션: 대수 제한 -->
-            <div class="advWrap">
-              <label style="display:inline-flex;gap:8px;align-items:center; cursor:pointer;">
-                <input type="checkbox" id="trendUseAssembly" />
-                대수로 제한(고급)
-              </label>
-            </div>
-
-            <div class="selectWrap" id="wrapAssembly" style="display:none;">
-              <span class="selectLabel">대수</span>
-              <select id="trendAssembly" multiple size="1" style="min-width:140px;">
-                <option value="20">20대</option>
-                <option value="21">21대</option>
-                <option value="22" selected>22대</option>
-              </select>
-              <span class="hint">Ctrl/Shift 멀티</span>
-            </div>
-          </div>
+  <button id="trendApply" class="applyBtn">적용</button>
+  <button id="trendBack" class="applyBtn" style="display:none;">← 대분류</button>
+  <span id="trendLevelLabel" class="hint">대분류</span>
+</div>
         </div>
       </div>
 

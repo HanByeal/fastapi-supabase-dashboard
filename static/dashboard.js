@@ -32,6 +32,9 @@ const state = {
 
   // ✅ 트렌드: 적용 버튼 방식(변경 시 dirty)
   trendDirty: false,
+  // ✅ trend2 드릴다운 상태
+  trendLevel: "l2",
+  trendL2: null,
 };
 
 function uniq(arr){ return [...new Set(arr)]; }
@@ -648,63 +651,36 @@ function fillSelectOptions(sel, values, keepSelected=false){
 
 function markTrendDirty(){
   state.trendDirty = true;
-  document.getElementById("trendApply").disabled = false;
+  const btn = document.getElementById("trendApply");
+  if (btn) btn.disabled = false;
 }
 
+
 function buildTrend2Query(){
-  // 1) 고급: 대수 제한
-  const useAssembly = document.getElementById("trendUseAssembly").checked;
-  let assemblies = [];
-  if (useAssembly){
-    assemblies = getMultiSelectedValues(document.getElementById("trendAssembly"))
-      .map(Number).filter(n => [20,21,22].includes(n));
-  }
+  const group_by = (state.trendLevel === "l3") ? "l3" : "l2";
 
-  // 2) 그룹
-  const group_by = document.querySelector('input[name="trendGroup"]:checked')?.value || "l2";
+  const sy = document.getElementById("trendStartY");
+  const sq = document.getElementById("trendStartQ");
+  const ey = document.getElementById("trendEndY");
+  const eq = document.getElementById("trendEndQ");
 
-  // 3) 기간
-  const preset = document.getElementById("trendPreset").value;
-  let recent_n_quarters = null;
-  let start_year=null, start_quarter=null, end_year=null, end_quarter=null;
-
-  if (preset.startsWith("recent_")){
-    recent_n_quarters = Number(preset.replace("recent_","")) || 8;
-  } else {
-    start_year = Number(document.getElementById("trendStartY").value);
-    start_quarter = Number(document.getElementById("trendStartQ").value);
-    end_year = Number(document.getElementById("trendEndY").value);
-    end_quarter = Number(document.getElementById("trendEndQ").value);
-  }
-
-  // 4) 카테고리
-  let l2_in = null, l2_eq = null, l3_in = null;
-
-  if (group_by === "l2"){
-    const l2s = getMultiSelectedValues(document.getElementById("trendL2Multi")).filter(Boolean);
-    if (l2s.length) l2_in = l2s.join(",");
-  } else {
-    l2_eq = (document.getElementById("trendL2One").value || "").trim() || null;
-    const l3s = getMultiSelectedValues(document.getElementById("trendL3Multi")).filter(Boolean);
-    if (l3s.length) l3_in = l3s.join(",");
-  }
+  const start_year = sy ? Number(sy.value) : null;
+  const start_quarter = sq ? Number(sq.value) : 1;
+  const end_year = ey ? Number(ey.value) : null;
+  const end_quarter = eq ? Number(eq.value) : 4;
 
   const p = new URLSearchParams();
-  if (assemblies.length) p.set("assemblies", assemblies.join(","));
   p.set("group_by", group_by);
 
-  if (recent_n_quarters){
-    p.set("recent_n_quarters", String(recent_n_quarters));
-  } else {
-    p.set("start_year", String(start_year));
-    p.set("start_quarter", String(start_quarter));
-    p.set("end_year", String(end_year));
-    p.set("end_quarter", String(end_quarter));
-  }
+  if (start_year != null) p.set("start_year", String(start_year));
+  p.set("start_quarter", String(start_quarter));
+  if (end_year != null) p.set("end_year", String(end_year));
+  p.set("end_quarter", String(end_quarter));
 
-  if (l2_in) p.set("l2_in", l2_in);
-  if (l2_eq) p.set("l2_eq", l2_eq);
-  if (l3_in) p.set("l3_in", l3_in);
+  // L3 드릴다운이면, 선택된 L2로 범위 제한
+  if (group_by === "l3" && state.trendL2){
+    p.set("l2_eq", String(state.trendL2));
+  }
 
   return p.toString();
 }
@@ -716,14 +692,14 @@ function renderTrend2Line(divId, rows){
     count: Number(r.count || 0),
   }));
 
+  const el = document.getElementById(divId);
   if (!enriched.length){
-    document.getElementById(divId).innerHTML =
-      `<div class="err">선택한 조건에 해당하는 데이터가 없습니다.</div>`;
+    if (el) el.innerHTML = `<div class="err">선택한 기간에 해당하는 데이터가 없습니다.</div>`;
     return;
   }
 
-  const periods = uniq(enriched.map(r=>r.period)).sort();
-  const labels = uniq(enriched.map(r=>r.label)).sort();
+  const periods = uniq(enriched.map(r => r.period)).sort();
+  const labels  = uniq(enriched.map(r => r.label)).sort();
 
   const byLabel = new Map(labels.map(l => [l, new Map()]));
   for (const r of enriched){
@@ -731,21 +707,52 @@ function renderTrend2Line(divId, rows){
   }
 
   const data = labels.map(l => ({
-    type:"scatter",
-    mode:"lines+markers",
-    name:l,
+    type: "scatter",
+    mode: "lines+markers",
+    name: l,
     x: periods,
     y: periods.map(p => byLabel.get(l).get(p) ?? 0),
     hovertemplate: "%{x}<br>"+l+"<br>건수: %{y}<extra></extra>"
   }));
 
+  const titleText = (state.trendLevel === "l3" && state.trendL2)
+    ? `소분류 트렌드(건수) · ${state.trendL2}`
+    : "대분류 트렌드(건수)";
+
   Plotly.newPlot(divId, data, {
-    title:{text:"분기별 트렌드(건수)", x:0},
-    xaxis:{tickangle:-20, automargin:true},
-    yaxis:{title:"건수", automargin:true},
-    margin:{t:50, r:20, b:210, l:70},
-    legend:{ orientation:"h", x:0, y:-0.45, xanchor:"left", yanchor:"top" },
-  }, {responsive:true, displaylogo:false});
+    title: { text: titleText, x: 0 },
+    xaxis: { tickangle: -20, automargin: true },
+    yaxis: { title: "건수", automargin: true },
+    margin: { t: 50, r: 20, b: 210, l: 70 },
+    legend: { orientation: "h", x: 0, y: -0.45, xanchor: "left", yanchor: "top" },
+  }, { responsive: true, displaylogo: false }).then(() => {
+    const plotEl = document.getElementById(divId);
+    if (!plotEl) return;
+
+    // 범례 클릭으로 드릴다운 (L2 -> L3)
+    try { plotEl.removeAllListeners?.("plotly_legendclick"); } catch (_) {}
+
+    plotEl.on("plotly_legendclick", async (ev) => {
+      if (state.trendLevel !== "l2") return false;
+
+      const selectedL2 = (ev?.curveNumber != null) ? (data?.[ev.curveNumber]?.name) : null;
+      if (!selectedL2) return false;
+
+      state.trendLevel = "l3";
+      state.trendL2 = selectedL2;
+
+      const backBtn = document.getElementById("trendBack");
+      const labelEl = document.getElementById("trendLevelLabel");
+      if (backBtn) backBtn.style.display = "inline-flex";
+      if (labelEl) labelEl.textContent = `소분류: ${selectedL2}`;
+
+      const applyBtn = document.getElementById("trendApply");
+      if (applyBtn) applyBtn.disabled = true;
+
+      await loadTrend2();
+      return false; // 기본 legend 토글 막기
+    });
+  });
 }
 
 async function initTrend2Controls(){
@@ -753,34 +760,46 @@ async function initTrend2Controls(){
   state.trend2Options = opts;
 
   const years = (opts.years || []).map(String);
+
   const startY = document.getElementById("trendStartY");
-  const endY = document.getElementById("trendEndY");
-  startY.innerHTML = ""; endY.innerHTML = "";
-  for (const y of years){
-    startY.appendChild(new Option(y, y));
-    endY.appendChild(new Option(y, y));
+  const endY   = document.getElementById("trendEndY");
+  const startQ = document.getElementById("trendStartQ");
+  const endQ   = document.getElementById("trendEndQ");
+
+  if (startY && endY){
+    startY.innerHTML = "";
+    endY.innerHTML = "";
+    for (const y of years){
+      startY.appendChild(new Option(y, y));
+      endY.appendChild(new Option(y, y));
+    }
   }
 
-  // 기본값: min/max
+  // 기본값: 전체 범위(min~max)
   if (opts.min && opts.max){
-    startY.value = String(opts.min.year);
-    document.getElementById("trendStartQ").value = String(opts.min.quarter);
-    endY.value = String(opts.max.year);
-    document.getElementById("trendEndQ").value = String(opts.max.quarter);
+    if (startY) startY.value = String(opts.min.year);
+    if (startQ) startQ.value = String(opts.min.quarter);
+    if (endY)   endY.value   = String(opts.max.year);
+    if (endQ)   endQ.value   = String(opts.max.quarter);
   } else if (years.length){
-    startY.value = years[0];
-    endY.value = years[years.length-1];
+    if (startY) startY.value = years[0];
+    if (startQ) startQ.value = "1";
+    if (endY)   endY.value   = years[years.length-1];
+    if (endQ)   endQ.value   = "4";
   }
 
-  // L2 옵션
-  fillSelectOptions(document.getElementById("trendL2Multi"), opts.l2 || []);
-  fillSelectOptions(document.getElementById("trendL2One"), opts.l2 || []);
+  // 초기 상태
+  state.trendLevel = "l2";
+  state.trendL2 = null;
+  state.trendDirty = false;
 
-  if ((opts.l2 || []).length){
-    document.getElementById("trendL2One").value = opts.l2[0];
-  }
+  const applyBtn = document.getElementById("trendApply");
+  if (applyBtn) applyBtn.disabled = true;
 
-  await reloadL3Options();
+  const backBtn = document.getElementById("trendBack");
+  const labelEl = document.getElementById("trendLevelLabel");
+  if (backBtn) backBtn.style.display = "none";
+  if (labelEl) labelEl.textContent = "대분류";
 }
 
 async function reloadL3Options(){
@@ -794,18 +813,9 @@ async function reloadL3Options(){
 }
 
 async function loadTrend2(){
-  setLoading("trend", true);
-  try{
-    const qs = buildTrend2Query();
-    const rows = await fetchJSON(`/api/trend2/series?${qs}`);
-    renderTrend2Line("plot_trend", rows);
-    state.trendDirty = false;
-    document.getElementById("trendApply").disabled = true;
-  } catch(e){
-    setErr("plot_trend", String(e));
-  } finally {
-    setLoading("trend", false);
-  }
+  const q = buildTrend2Query();
+  const rows = await fetchJSON("/api/trend2/series?" + q);
+  renderTrend2Line("plot_trend", rows);
 }
 
 /* =========================
@@ -1195,7 +1205,7 @@ document.getElementById("assemblySel")?.addEventListener("change", async (e) => 
   await refreshBoth();
 });
 
-document.getElementById("sessionSel").addEventListener("change", async (e) => {
+document.getElementById("sessionSel")?.addEventListener("change", async (e) => {
   state.sessionNo = Number(e.target.value);
 
   state.shown.people = state.more.people;
@@ -1209,12 +1219,12 @@ document.getElementById("sessionSel").addEventListener("change", async (e) => {
   await refreshBoth();
 });
 
-document.getElementById("partySel").addEventListener("change", (e) => {
+document.getElementById("partySel")?.addEventListener("change", (e) => {
   state.party = String(e.target.value || "");
   renderRecapFromLast();
 });
 
-document.getElementById("q").addEventListener("input", (e) => {
+document.getElementById("q")?.addEventListener("input", (e) => {
   state.q = String(e.target.value || "");
   renderRecapFromLast();
 });
@@ -1276,64 +1286,49 @@ document.getElementById("qSessionSel")?.addEventListener("change", async (e) => 
 });
 
 /* =========================
-   ✅ trend2 UI 동작(적용 버튼)
+   ✅ trend2 UI 동작(새로 구현)
+   - 시작/끝 연도·분기 선택
+   - 적용 버튼으로 L2 그래프 렌더
+   - 범례 클릭 시 해당 L2의 L3 그래프 렌더
+   - ← 대분류로 복귀
    ========================= */
-function setTrendGroupUI(group){
-  const isL2 = (group === "l2");
-  document.getElementById("wrapL2Multi").style.display = isL2 ? "inline-flex" : "none";
-  document.getElementById("wrapL2One").style.display   = isL2 ? "none" : "inline-flex";
-  document.getElementById("wrapL3Multi").style.display = isL2 ? "none" : "inline-flex";
-}
+document.getElementById("trendStartY")?.addEventListener("change", markTrendDirty);
+document.getElementById("trendStartQ")?.addEventListener("change", markTrendDirty);
+document.getElementById("trendEndY")?.addEventListener("change", markTrendDirty);
+document.getElementById("trendEndQ")?.addEventListener("change", markTrendDirty);
 
-function setTrendPresetDisabled(){
-  const preset = document.getElementById("trendPreset").value;
-  const isCustom = (preset === "custom");
-  document.getElementById("trendStartY").disabled = !isCustom;
-  document.getElementById("trendStartQ").disabled = !isCustom;
-  document.getElementById("trendEndY").disabled = !isCustom;
-  document.getElementById("trendEndQ").disabled = !isCustom;
-}
+document.getElementById("trendApply")?.addEventListener("click", async () => {
+  // 적용은 항상 L2로 시작
+  state.trendLevel = "l2";
+  state.trendL2 = null;
 
-document.getElementById("trendApply").addEventListener("click", loadTrend2);
+  const backBtn = document.getElementById("trendBack");
+  const labelEl = document.getElementById("trendLevelLabel");
+  if (backBtn) backBtn.style.display = "none";
+  if (labelEl) labelEl.textContent = "대분류";
 
-document.getElementById("trendPreset").addEventListener("change", () => {
-  setTrendPresetDisabled();
-  markTrendDirty();
+  state.trendDirty = false;
+  const applyBtn = document.getElementById("trendApply");
+  if (applyBtn) applyBtn.disabled = true;
+
+  await loadTrend2();
 });
 
-document.getElementById("trendStartY").addEventListener("change", markTrendDirty);
-document.getElementById("trendStartQ").addEventListener("change", markTrendDirty);
-document.getElementById("trendEndY").addEventListener("change", markTrendDirty);
-document.getElementById("trendEndQ").addEventListener("change", markTrendDirty);
+document.getElementById("trendBack")?.addEventListener("click", async () => {
+  state.trendLevel = "l2";
+  state.trendL2 = null;
 
-for (const r of document.querySelectorAll('input[name="trendGroup"]')){
-  r.addEventListener("change", async () => {
-    const g = document.querySelector('input[name="trendGroup"]:checked')?.value || "l2";
-    setTrendGroupUI(g);
-    if (g === "l3"){
-      await reloadL3Options();
-    }
-    markTrendDirty();
-  });
-}
+  const backBtn = document.getElementById("trendBack");
+  const labelEl = document.getElementById("trendLevelLabel");
+  if (backBtn) backBtn.style.display = "none";
+  if (labelEl) labelEl.textContent = "대분류";
 
-document.getElementById("trendL2Multi").addEventListener("change", markTrendDirty);
+  state.trendDirty = false;
+  const applyBtn = document.getElementById("trendApply");
+  if (applyBtn) applyBtn.disabled = true;
 
-document.getElementById("trendL2One").addEventListener("change", async () => {
-  await reloadL3Options();
-  markTrendDirty();
+  await loadTrend2();
 });
-
-document.getElementById("trendL3Multi").addEventListener("change", markTrendDirty);
-
-// 고급옵션: 대수 제한 토글
-document.getElementById("trendUseAssembly").addEventListener("change", (e) => {
-  const on = !!e.target.checked;
-  document.getElementById("wrapAssembly").style.display = on ? "inline-flex" : "none";
-  markTrendDirty();
-});
-
-document.getElementById("trendAssembly").addEventListener("change", markTrendDirty);
 
 /* =========================
    초기 로드
@@ -1359,10 +1354,8 @@ document.getElementById("trendAssembly").addEventListener("change", markTrendDir
   
   // ✅ trend2 UI 초기화
   await initTrend2Controls();
-  setTrendGroupUI("l2");
 
   // preset 기본: 최근 8분기 → 직접선택 비활성
-  setTrendPresetDisabled();
 
   // 초기 1회 렌더(바로 보여주기)
   await loadTrend2();

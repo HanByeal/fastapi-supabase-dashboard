@@ -56,12 +56,14 @@ async def news_page():
 async def api_news_issues(
     q: Optional[str] = Query(None, description="검색어(키워드/질문/배경)"),
     batch_id: Optional[str] = Query(None, description="배치 필터(선택)"),
-    limit: int = 3000,
+    limit: int = 10, 
+    # 최신 10개만
 ):
     params: Dict[str, Any] = {
         "select": "batch_id,created_at,keyword,background,question,answer",
         "order": "created_at.desc",
-        "limit": min(max(limit, 100), 5000),
+        "limit": min(max(limit, 1), 5000),
+        # "limit": min(max(limit, 100), 5000), -> 1 로 수정
         "offset": 0,
     }
     if batch_id:

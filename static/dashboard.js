@@ -842,6 +842,7 @@ async function loadTrend2(){
     const q = buildTrend2Query();
     const rows = await fetchJSON("/api/trend2/series?" + q);
     renderTrend2Line("plot_trend", rows);
+    await loadPartyMetrics();
   } finally {
     state.trendLoading = false;
     if (loading) loading.style.display = "none";
@@ -852,29 +853,36 @@ async function loadTrend2(){
    정당별 관심(기존 유지)
    ========================= */
 function renderPartyBarAll(divId, rows){
-  const l2s = uniq(rows.map(r=>r.l2)).sort();
-  const parties = uniq(rows.map(r=>r.party)).sort();
+  const mode = (state.trendLevel === "l3") ? "l3" : "l2";
+  const keyField = (mode === "l3") ? "l3" : "l2";
+
+  const labels = uniq(rows.map(r=>r[keyField])).filter(Boolean).sort();
+  const parties = uniq(rows.map(r=>r.party)).filter(Boolean).sort();
 
   const m = new Map(parties.map(p => [p, new Map()]));
   for (const r of rows){
     const p = r.party ?? "미분류";
-    const l2 = r.l2 ?? "미분류";
+    const k = r[keyField] ?? "미분류";
     const v = Number(r.meeting_count ?? 0);
     if (!m.has(p)) m.set(p, new Map());
-    m.get(p).set(l2, v);
+    m.get(p).set(k, v);
   }
 
   const data = parties.map(p => ({
     type:"bar",
     name:p,
-    x:l2s,
-    y:l2s.map(l2 => m.get(p)?.get(l2) ?? 0),
+    x:labels,
+    y:labels.map(k => m.get(p)?.get(k) ?? 0),
     hovertemplate: "%{x}<br>"+p+"<br>건수: %{y}<extra></extra>",
     marker: { color: partyColor(p) }
   }));
 
+  const title = (mode === "l3" && state.trendL2)
+    ? `정당별 관심 (안건 등장 수) · ${state.trendL2}`
+    : "정당별 관심 (안건 등장 수)";
+
   Plotly.newPlot(divId, data, {
-    title:{text:"정당별 관심 (안건 등장 수)", x:0},
+    title:{text:title, x:0},
     barmode:"group",
     xaxis:{tickangle:-20, automargin:true},
     yaxis:{title:"건수", automargin:true},
@@ -885,14 +893,34 @@ function renderPartyBarAll(divId, rows){
 
 async function loadPartyMetrics(){
   try{
-    const partyRows = await fetchJSON("/api/party-domain-metrics?limit=1000");
-    renderPartyBarAll("plot_party", partyRows);
+    const sy = Number(document.getElementById("trendStartY").value);
+    const sq = Number(document.getElementById("trendStartQ").value);
+    const ey = Number(document.getElementById("trendEndY").value);
+    const eq = Number(document.getElementById("trendEndQ").value);
+
+    const mode = (state.trendLevel === "l3") ? "l3" : "l2";
+
+    const p = new URLSearchParams();
+    p.set("start_year", String(sy));
+    p.set("start_quarter", String(sq));
+    p.set("end_year", String(ey));
+    p.set("end_quarter", String(eq));
+    p.set("group_by", mode);
+    p.set("metric", "meeting");
+
+    if (mode === "l3" && state.trendL2){
+      p.set("l2_eq", String(state.trendL2));
+    }
+
+    const rows = await fetchJSON("/api/party-trend/metrics?" + p.toString());
+    renderPartyBarAll("plot_party", rows || []);
   } catch(e){
     setErr("plot_party", String(e));
   }
 }
 
 /* =========================
+   주요 질의의원/* =========================
    주요 질의의원(기존)
    ========================= */
 function getQuestionSessionNo(r){
@@ -1386,6 +1414,4 @@ document.getElementById("trendBack")?.addEventListener("click", async () => {
   // 초기 1회 렌더(바로 보여주기)
   await loadTrend2();
 
-  // 정당별 관심은 기존 그대로
-  await loadPartyMetrics();
 })();

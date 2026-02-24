@@ -122,9 +122,91 @@ async def _paged_select_all(
 # ---- 스니펫 유틸: 키워드 기준 ±2문장 (총 5문장) ----
 _SENT_SPLIT = re.compile(r"(?<=[.!?…])\s+|\n+")
 
-def _make_snippet(text: str, kw: str, window: int = 2, max_sent: int = 5) -> Tuple[str, bool]:
+def _make_snippet(text: str, kw: str, window: int = 2, max_sent: int = 5, max_chars: int = 360) -> Tuple[str, bool]:
+    """키워드 포함 스니펫 생성.
+    - 기본: 키워드가 포함된 문장을 찾고 ±window 문장 범위에서 최대 max_sent 문장으로 구성
+    - 예외(문장 분리/줄바꿈 등으로 매칭 실패): 키워드 위치 기준으로 문자 window를 잘라서 키워드 포함 보장
+    - 프론트가 5줄(line-clamp)로 잘라 보여도 키워드가 안 보이는 문제를 줄이기 위해,
+      결과 스니펫에서 키워드가 너무 뒤에 있으면(>120자) 앞부분을 잘라 키워드를 앞쪽으로 당김.
+    반환: (snippet_text, truncated_flag)
+    """
     if not text or not kw:
         return (text or ""), False
+
+    t = str(text)
+    pat = re.compile(re.escape(kw), re.IGNORECASE)
+
+    sents = [s.strip() for s in _SENT_SPLIT.split(t) if s.strip()]
+    # 1) 문장 기반
+    idx = None
+    for i, s in enumerate(sents):
+        if pat.search(s):
+            idx = i
+            break
+
+    truncated = False
+    if idx is not None and sents:
+        start_i = max(0, idx - window)
+        end_i = min(len(sents), idx + window + 1)
+        # 최대 max_sent 문장으로 제한(키워드가 가운데 오도록)
+        clip_sents = sents[start_i:end_i]
+        if len(clip_sents) > max_sent:
+            # idx를 중심으로 max_sent 맞춤
+            rel = idx - start_i
+            left = max(0, rel - (max_sent // 2))
+            right = left + max_sent
+            clip_sents = clip_sents[left:right]
+        clip = " ".join(clip_sents).strip()
+        truncated = (start_i > 0) or (end_i < len(sents))
+    else:
+        # 2) fallback: 문자 window로 키워드 포함 보장
+        m = pat.search(t)
+        if not m:
+            # 정말 못 찾으면 앞부분
+            clip = " ".join(sents[:max_sent]).strip() if sents else t[:max_chars]
+            return clip[:max_chars], True if len(clip) > max_chars else False
+
+        pos = m.start()
+        pre = 140
+        post = max_chars - pre
+        s0 = max(0, pos - pre)
+        s1 = min(len(t), pos + post)
+        clip = t[s0:s1].strip()
+        if s0 > 0:
+            clip = "… " + clip
+        if s1 < len(t):
+            clip = clip + " …"
+        truncated = True
+
+    # 3) 키워드를 앞쪽으로 당김(프론트 line-clamp 대비)
+    m2 = pat.search(clip)
+    if m2:
+        kpos = m2.start()
+        if kpos > 120:
+            # 키워드 앞을 줄여서 키워드가 80~120자 근처에 오도록
+            cut_from = max(0, kpos - 100)
+            clip2 = clip[cut_from:].lstrip()
+            clip = ("… " + clip2) if cut_from > 0 else clip2
+            truncated = True
+
+    # 4) max_chars 최종 제한(키워드 포함 구간 우선)
+    if len(clip) > max_chars:
+        m3 = pat.search(clip)
+        if m3:
+            pos = m3.start()
+            pre = 100
+            post = max_chars - pre
+            s0 = max(0, pos - pre)
+            s1 = min(len(clip), pos + post)
+            piece = clip[s0:s1]
+            clip = ("… " if s0 > 0 else "") + piece + (" …" if s1 < len(clip) else "")
+            truncated = True
+        else:
+            clip = clip[:max_chars].rstrip() + "…"
+            truncated = True
+
+    return clip, truncated
+
 
     sents = [s.strip() for s in _SENT_SPLIT.split(text) if s.strip()]
     if not sents:
@@ -377,12 +459,16 @@ async def speech_search(
             widgets["top_speakers"] = top
             widgets_note["top_speakers"] = top_note
 
+        # ✅ total_count 추가 (series가 있으면 합계 = 전체 매칭 건수)
+        total_count = sum(int(x.get("count", 0)) for x in (series or [])) if include_series else None
+        
         return {
             "keyword": kw,
             "start": start,
             "end": end,
             "bucket": "month",
             "series": series,
+            "total_count": total_count,
             "speeches": collected,
             "next_offset": next_offset,
             "has_more": has_more,

@@ -516,7 +516,7 @@ async function apiSearch({kw, start, end, limit, offset, includeSeries, includeW
     if(state.start) $("from").value = state.start;
     if(state.end) $("to").value = state.end;
 
-    $("rangeHint").textContent = `${fmtRange(state.start, state.end)} · ${state.kw}`;
+    $("rangeHint").textContent = `${fmtRange(state.start, state.end)} · ${state.kw} · ${Number(p.total_count||0).toLocaleString()}건`;
     $("listHint").textContent = "최신순";
 
     renderChart(p.series || [], state.start, state.end);

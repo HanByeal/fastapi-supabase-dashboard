@@ -286,33 +286,6 @@
     display: block;          /* 자연 높이 */
     overflow: visible;       /* 안 잘림 */
     }
-
-    /* 전체보기는 원래대로 줄바꿈 유지 */
-    .answer-full {
-      display: none;
-      margin-top: 10px;
-      padding: 15px;
-      background-color: #f0f8ff;
-      border-radius: 4px;
-      font-size: 14px;
-      color: #34495e;
-      line-height: 1.7;
-      white-space: pre-wrap;
-    }
-    .answer-full .answer-text{ white-space: pre-wrap; }
-    .answer-full.show { display: block; }
-
-    .show-more-btn {
-      color: #4a90e2;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 500;
-      margin-top: 8px;
-      display: inline-block;
-      user-select: none;
-    }
-    .show-more-btn:hover { text-decoration: underline; }
-
     .muted { color: #888; font-size: 12px; }
 
     .loading {
@@ -519,35 +492,25 @@
     }
 
     function qaHTML(rows, baseIdx) {
-      // rows: [{question,answer,background,created_at,...}]
-      return rows.map((r, i) => {
-        const q = String(r.question || '').trim();
-        const a = String(r.answer || '').trim();
-        const preview = a.length > 180 ? (a.slice(0, 180) + '…') : a;
-        const ansId = `ans_${baseIdx}_${i+1}`;
+  // rows: [{question,answer,background,created_at,...}]
+  return rows.map((r, i) => {
+    const q = String(r.question || '').trim();
+    const a = String(r.answer || '').trim();
 
-        return `
-          <div class="qa-item">
-            <div class="question">${esc(q || '(질문 없음)')}</div>
+    return `
+      <div class="qa-item">
+        <div class="question">${esc(q || '(질문 없음)')}</div>
 
-            <div class="answer-preview">
-              <div class="answer-row">
-                <div class="answer-icon">💬</div>
-                <div class="answer-text">${esc(preview || '(답변 없음)')}</div>
-              </div>
-
-              ${a.length > 180 ? `<div class="show-more-btn" onclick="toggleAnswer('${ansId}', event)">자세히 보기 ▼</div>` : ``}
-              <div class="answer-full" id="${ansId}">
-                <div class="answer-row">
-                  <div class="answer-icon">💬</div>
-                  <div class="answer-text">${esc(a)}</div>
-                </div>
-              </div>
-            </div>
+        <div class="answer-preview">
+          <div class="answer-row">
+            <div class="answer-icon">💬</div>
+            <div class="answer-text">${esc(a || '(답변 없음)')}</div>
           </div>
-        `;
-      }).join('');
-    }
+        </div>
+      </div>
+    `;
+  }).join('');
+}
 
 
     async function renderDetailInto(issueId, keyword, idx) {
@@ -605,12 +568,7 @@
       }
     }
 
-    function toggleAnswer(id, ev) {
-      if (ev) ev.stopPropagation();
-      const el = document.getElementById(id);
-      if (!el) return;
-      el.classList.toggle('show');
-    }
+    
 
     function scrollToIssue(issueId) {
       const card = document.getElementById(issueId + '_card');

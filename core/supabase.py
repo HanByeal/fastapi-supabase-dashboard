@@ -23,6 +23,9 @@ async def sb_select(table: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
     url = f"{SUPABASE_URL}/rest/v1/{table}"
     async with httpx.AsyncClient(timeout=60.0) as client:
         r = await client.get(url, headers=_headers(), params=params)
+        # r = await client.get(...) 바로 아래에
+        print("[SB_SELECT]", r.url)
+        print("[SB_STATUS]", r.status_code)
 
     if r.status_code >= 400:
         raise HTTPException(status_code=r.status_code, detail=r.text)

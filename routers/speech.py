@@ -1,5 +1,6 @@
 # routers/speech.py
 import re
+from functools import lru_cache
 from collections import Counter, defaultdict
 from datetime import datetime
 from typing import Optional, Dict, Any, List, Tuple
@@ -75,6 +76,7 @@ def _build_and_param(tokens: List[str]) -> Optional[str]:
     parts = [f"speech_text.ilike.%{t}%" for t in toks]
     return "(" + ",".join(parts) + ")"
 
+@lru_cache(maxsize=256)
 def _extract_highlight_terms(kw: str) -> List[str]:
     """하이라이트용(표시용) 토큰/구문.
     - 가능한 한 '재외국민 투표권'처럼 구문도 포함
@@ -609,9 +611,10 @@ async def speech_search(
                 rows = [r for r in rows if (r.get("date") or "") <= end]
 
             # 스니펫(원문 유지 + snippet_text/snippet_truncated)
+            highlight_terms = (_merge_highlight_terms(_extract_highlight_terms(kw), fb_tokens)
+                              if used_fallback else _extract_highlight_terms(kw))
             for r in rows:
                 txt = r.get("speech_text") or ""
-                highlight_terms = (_merge_highlight_terms(_extract_highlight_terms(kw), fb_tokens) if used_fallback else _extract_highlight_terms(kw))
                 snip_kw = kw
                 for cand in (highlight_terms or []):
                     if cand and (cand in txt):

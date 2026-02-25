@@ -397,12 +397,12 @@ function renderWordCloud(divId, kwList){
       .text(d => d.text);
 
     texts
-      .style("cursor", "pointer")
-      .on("click", (event, d) => {
-        const url = new URL("/speech", location.origin);
-        url.searchParams.set("kw", d.text);
-        window.location.href = url.toString();
-      });
+      .style("cursor", "default") // 원래 "pointer"
+      // .on("click", (event, d) => {
+      //   const url = new URL("/speech", location.origin);
+      //   url.searchParams.set("kw", d.text);
+      //   window.location.href = url.toString();
+      // });
 
     const bbox = g.node().getBBox();
     const dx = (w / 2) - (bbox.x + bbox.width / 2);

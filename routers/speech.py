@@ -12,6 +12,177 @@ from core.supabase import sb_select
 router = APIRouter(prefix="/api/speech", tags=["speech"])
 
 TABLE = TABLES.get("speeches", "speeches")
+# ✅ XSN(접미사) 중 결합해도 자연스러운 경우만 표시용 토큰으로 합칩니다.
+# 예) '투명'+'성' -> '투명성', '투표'+'권' -> '투표권'
+_SUFFIX_NOUNS = {"성", "권", "화", "법", "제", "안"}
+
+
+# -------------------------
+# 검색 유틸
+# -------------------------
+def _nospace(s: str) -> str:
+    return re.sub(r"\s+", "", (s or "")).strip()
+
+# Kiwi(선택)
+try:
+    from kiwipiepy import Kiwi  # type: ignore
+    _KIWI = Kiwi()
+except Exception:
+    _KIWI = None
+
+# 접미사(선거 '투명' + '성' => '투명성', '투표'+'권' => '투표권')
+_SUFFIX_XSN = {"성", "권"}
+
+def _extract_and_tokens(kw: str, max_tokens: int = 3) -> List[str]:
+    """AND(교집합) 폴백에 사용할 검색 토큰.
+    - 기본: NNG/NNP 등 명사 토큰 사용
+    - 예외: XSN 접미사(성/권)는 바로 앞 명사에 붙여 단어를 '복원' (투명성/투표권)
+    """
+    kw = (kw or "").strip()
+    if not kw or not _KIWI:
+        return []
+
+    toks = _KIWI.tokenize(kw)
+
+    out: List[str] = []
+    for t in toks:
+        form = getattr(t, "form", "")
+        tag = getattr(t, "tag", "")
+        if not form:
+            continue
+        if tag.startswith("NN"):
+            out.append(form)
+        elif out and tag == "XSN" and len(form) == 1 and form in _SUFFIX_XSN:
+            out[-1] = out[-1] + form
+
+    # 중복 제거(순서 유지) + 길이 2 이상
+    dedup: List[str] = []
+    seen = set()
+    for x in out:
+        x = (x or "").strip()
+        if len(x) < 2:
+            continue
+        if x not in seen:
+            dedup.append(x); seen.add(x)
+
+    # 최소 2개 필요
+    return dedup[:max_tokens] if len(dedup) >= 2 else []
+
+def _build_and_param(tokens: List[str]) -> Optional[str]:
+    toks = [t for t in (tokens or []) if t]
+    if len(toks) < 2:
+        return None
+    parts = [f"speech_text.ilike.%{t}%" for t in toks]
+    return "(" + ",".join(parts) + ")"
+
+def _extract_highlight_terms(kw: str) -> List[str]:
+    """하이라이트용(표시용) 토큰/구문.
+    - 가능한 한 '재외국민 투표권'처럼 구문도 포함
+    - Kiwi가 있어도 항상 리스트 반환(절대 None 반환 금지)
+    """
+    kw = (kw or "").strip()
+    if not kw:
+        return []
+
+    # Kiwi 없으면 원문만
+    if not _KIWI:
+        return [kw]
+
+    toks = _KIWI.tokenize(kw)
+    terms: List[str] = []
+
+    # 1) 명사 토큰(2자 이상)
+    nouns = []
+    for t in toks:
+        if getattr(t, "tag", "").startswith("NN") and len(getattr(t, "form", "")) >= 2:
+            nouns.append(t.form)
+
+    # 2) XSN 접미사(성/권 등)는 앞 명사와 결합해서 표시용 토큰 생성
+    merged = []
+    for t in toks:
+        form = getattr(t, "form", "")
+        tag = getattr(t, "tag", "")
+        if not form:
+            continue
+        if tag.startswith("NN"):
+            merged.append(form)
+        elif merged and tag == "XSN" and len(form) == 1 and form in _SUFFIX_NOUNS:
+            merged[-1] = merged[-1] + form
+
+    # 3) 표시용 우선순위: 결합형(투명성/투표권) + 명사 + 원문
+    for x in merged:
+        if len(x) >= 2:
+            terms.append(x)
+    for x in nouns:
+        terms.append(x)
+
+    # 4) 'A B' 구문도 하나 추가(띄어쓰기 대응)
+    if merged and len(merged) >= 2:
+        terms.append(" ".join(merged[:2]))
+
+    # 5) 원문과 공백 제거 버전도 추가
+    terms.append(kw)
+    ns = _nospace(kw)
+    if ns != kw:
+        terms.append(ns)
+
+    # 중복 제거(순서 유지)
+    out = []
+    seen = set()
+    for x in terms:
+        x = (x or "").strip()
+        if not x:
+            continue
+        if x not in seen:
+            out.append(x); seen.add(x)
+
+    return out[:8]
+def _merge_highlight_terms(base_terms: List[str], fb_tokens: List[str]) -> List[str]:
+    # 폴백(AND)로 검색된 경우, 실제 매칭 토큰도 하이라이트에 포함
+    out: List[str] = []
+    seen = set()
+    for x in (fb_tokens or []):
+        if x and x not in seen:
+            out.append(x); seen.add(x)
+    # 'A B' 구문도 추가(띄어쓰기 케이스)
+    if fb_tokens and len(fb_tokens) >= 2:
+        phrase = " ".join(fb_tokens[:2])
+        if phrase not in seen:
+            out.append(phrase); seen.add(phrase)
+    for x in (base_terms or []):
+        if x and x not in seen:
+            out.append(x); seen.add(x)
+    return out
+
+    # 연속 명사를 합친 복합어도 만들기 (재외+국민 -> 재외국민)
+    chunks: List[str] = []
+    i = 0
+    while i < len(units):
+        cur = units[i]
+        if i + 1 < len(units) and len(cur) <= 2:
+            comb = cur + units[i+1]
+            if len(comb) >= 3:
+                chunks.append(comb)
+                i += 2
+                continue
+        chunks.append(cur)
+        i += 1
+
+    phrases: List[str] = []
+    if len(chunks) >= 2:
+        phrases.append(" ".join(chunks))  # 구문
+
+    # 긴 것부터 중복 제거
+    cand = phrases + chunks + [kw]
+    out2: List[str] = []
+    seen2 = set()
+    for x in sorted(cand, key=len, reverse=True):
+        x = (x or "").strip()
+        if len(x) < 2:
+            continue
+        if x not in seen2:
+            out2.append(x); seen2.add(x)
+    return out2[:5]
 
 # Supabase(PostgREST)에서 1000행 cap이 걸리는 경우가 많아서 페이지로 끝까지 가져옴
 PAGE_SIZE = 1000
@@ -47,11 +218,13 @@ def _month_range(start_ymd: str, end_ymd: str) -> List[str]:
 
 
 async def _min_max_date_for_kw(kw: str) -> Tuple[Optional[str], Optional[str]]:
-    like = f"%{kw}%"
+    # 1) ns 단일 매칭으로 범위 탐색
+    kw_ns = _nospace(kw)
+    like = f"%{kw_ns}%"
 
     rows_min = await sb_select(TABLE, {
         "select": "date",
-        "speech_text": f"ilike.{like}",
+        "speech_text_ns": f"ilike.{like}",
         "date": "not.is.null",
         "order": "date.asc",
         "limit": 1,
@@ -61,7 +234,7 @@ async def _min_max_date_for_kw(kw: str) -> Tuple[Optional[str], Optional[str]]:
 
     rows_max = await sb_select(TABLE, {
         "select": "date",
-        "speech_text": f"ilike.{like}",
+        "speech_text_ns": f"ilike.{like}",
         "date": "not.is.null",
         "order": "date.desc",
         "limit": 1,
@@ -69,7 +242,37 @@ async def _min_max_date_for_kw(kw: str) -> Tuple[Optional[str], Optional[str]]:
     })
     max_date = rows_max[0]["date"] if rows_max else None
 
-    return min_date, max_date
+    if min_date and max_date:
+        return min_date, max_date
+
+    # 2) 0건이면 AND 폴백으로 범위 탐색 (예: 선거투명성 -> 선거 AND 투명성)
+    tokens = _extract_and_tokens(kw, max_tokens=3)
+    and_param = _build_and_param(tokens)
+    if not and_param:
+        return min_date, max_date
+
+    rows_min2 = await sb_select(TABLE, {
+        "select": "date",
+        "and": and_param,
+        "date": "not.is.null",
+        "order": "date.asc",
+        "limit": 1,
+        "offset": 0,
+    })
+    min2 = rows_min2[0]["date"] if rows_min2 else None
+
+    rows_max2 = await sb_select(TABLE, {
+        "select": "date",
+        "and": and_param,
+        "date": "not.is.null",
+        "order": "date.desc",
+        "limit": 1,
+        "offset": 0,
+    })
+    max2 = rows_max2[0]["date"] if rows_max2 else None
+
+    return min2 or min_date, max2 or max_date
+
 
 
 async def _paged_select_all(
@@ -205,6 +408,8 @@ def _make_snippet(text: str, kw: str, window: int = 2, max_sent: int = 5, max_ch
             clip = clip[:max_chars].rstrip() + "…"
             truncated = True
 
+    truncated = (_nospace(clip) != _nospace(text))
+
     return clip, truncated
 
 
@@ -222,6 +427,7 @@ def _make_snippet(text: str, kw: str, window: int = 2, max_sent: int = 5, max_ch
     if idx is None:
         clip = " ".join(sents[:max_sent])
         truncated = len(sents) > max_sent
+        truncated = (_nospace(clip) != _nospace(text))
         return clip, truncated
 
     start_i = max(0, idx - window)
@@ -231,6 +437,7 @@ def _make_snippet(text: str, kw: str, window: int = 2, max_sent: int = 5, max_ch
     clip_sents = sents[start_i:end_i]
     clip = " ".join(clip_sents)
     truncated = (start_i > 0) or (end_i < len(sents))
+    truncated = (_nospace(clip) != _nospace(text))
     return clip, truncated
 
 
@@ -337,7 +544,8 @@ async def speech_search(
             start = start or mn
             end = end or mx
 
-        like = f"%{kw}%"
+        kw_ns = _nospace(kw)
+        like = f"%{kw_ns}%"
 
         cols = (
             "speech_id,session,session_dir,meeting_no,date,"
@@ -345,9 +553,13 @@ async def speech_search(
         )
 
         base_where = {
-            "speech_text": f"ilike.{like}",
+            "speech_text_ns": f"ilike.{like}",
             "date": f"gte.{start}",
         }
+
+        fb_tokens = _extract_and_tokens(kw, max_tokens=3)
+        fb_and = _build_and_param(fb_tokens)
+        used_fallback = False
 
         # -------------------------
         # 1) 발언 목록(최신순) - offset부터 limit개만
@@ -370,6 +582,25 @@ async def speech_search(
             rows = await sb_select(TABLE, params)
             pages += 1
 
+            # ✅ 1차(붙여쓰기/ns 단일) 0건이면, 첫 페이지에서만 AND(교집합)로 1회 폴백
+            if (not rows) and (not used_fallback) and (cur_offset == offset) and fb_and:
+                used_fallback = True
+                # ✅ 폴백(AND)로 검색 조건을 전환 (series/widgets/total_count도 동일 조건 사용)
+                base_where = {
+                    "and": fb_and,
+                    "date": f"gte.{start}",
+                }
+                params = {
+                    "select": cols,
+                    "and": fb_and,
+                    "date": f"gte.{start}",
+                    "order": "date.desc,speech_order.desc",
+                    "limit": chunk,
+                    "offset": cur_offset,
+                }
+                rows = await sb_select(TABLE, params)
+                pages += 1
+
             if not rows:
                 break
 
@@ -380,7 +611,13 @@ async def speech_search(
             # 스니펫(원문 유지 + snippet_text/snippet_truncated)
             for r in rows:
                 txt = r.get("speech_text") or ""
-                snippet, trunc = _make_snippet(txt, kw, window=2, max_sent=5)
+                highlight_terms = (_merge_highlight_terms(_extract_highlight_terms(kw), fb_tokens) if used_fallback else _extract_highlight_terms(kw))
+                snip_kw = kw
+                for cand in (highlight_terms or []):
+                    if cand and (cand in txt):
+                        snip_kw = cand
+                        break
+                snippet, trunc = _make_snippet(txt, snip_kw, window=2, max_sent=5)
                 r["snippet_text"] = snippet
                 r["snippet_truncated"] = trunc
 
@@ -473,6 +710,8 @@ async def speech_search(
             "next_offset": next_offset,
             "has_more": has_more,
             "widgets": widgets,
+            "highlight_terms": highlight_terms,
+            "search_mode": {"used_fallback": used_fallback, "fallback_tokens": fb_tokens if used_fallback else []},
             "note": {
                 "speeches": speeches_note,
                 "series": series_note,

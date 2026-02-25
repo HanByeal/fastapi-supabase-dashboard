@@ -15,19 +15,16 @@
       padding: 20px;
     }
 
-    .header {
-      background-color: white;
-      padding: 20px 30px;
-      border-radius: 8px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-      margin-bottom: 20px;
+    .topbar {
+      margin: 0 auto 20px;
+      max-width: 1280px;
       display: flex;
       justify-content: space-between;
       align-items: center;
       gap: 15px;
     }
 
-    .header-left{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .navLeft{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-left:auto; }
     .brand{
       font-weight:900; font-size:16px; color:#111; text-decoration:none;
       padding:8px 10px; border-radius:10px;
@@ -44,13 +41,15 @@
 
     /* ✅ 상단 기준 시간 표시 */
     .asof{
-      margin-left: 6px;
+      margin-left: 0;
+      margin-right: 6px;
       font-size: 12px;
       color: #666;
       font-weight: 700;
+      white-space: nowrap;
     }
 
-    .header-title { font-size: 24px; font-weight: bold; color: #1a1a1a; }
+    .topbar-title { font-size: 24px; font-weight: bold; color: #1a1a1a; }
 
     /* .header-controls { display: flex; gap: 10px; align-items: center; } */
     .header-controls { display: none; }
@@ -305,15 +304,14 @@
   </style>
 </head>
 <body>
-  <div class="header">
-    <div class="header-left">
+  <div class="topbar">
+    <div class="navLeft">
+      <span id="asOf" class="asof"></span>
       <nav class="nav">
         <a class="navBtn" href="https://mois-data-internship.onrender.com/" target="_blank" rel="noopener">챗봇</a>
         <a class="navBtn" href="/">대시보드</a>
         <a class="navBtn" href="/news">예상 쟁점 브리핑</a>
         <a class="navBtn" href="/speech">발언검색</a>
-        <!-- ✅ 기준 시간(발언검색 옆) -->
-        <span id="asOf" class="asof"></span>
       </nav>
     </div>
 

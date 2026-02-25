@@ -202,8 +202,9 @@ window.addEventListener("unhandledrejection", (e) => {
     .topbar{
   display:flex;
   align-items:center;
-  justify-content:flex-start;
-  margin-bottom: 14px;
+  justify-content:flex-end;
+  max-width:1280px;
+  margin:0 auto 14px;
 }
 .navLeft{
   display:flex;
@@ -382,12 +383,8 @@ window.addEventListener("unhandledrejection", (e) => {
         <div class="cardhead" style="align-items:flex-start;">
         <div style="display:flex;flex-direction:column;gap:10px; width:100%;">
           <div class="titleRow" style="justify-content:flex-start; width:100%;">
-            <h3 style="display:inline-flex;align-items:center;gap:10px">주요 트렌드 · 정당별 관심<span id="loadingTrend" class="cardLoading" style="display:none;"><span class="miniSpin"></span> 적용중…</span></h3>
+            <h3 style="display:inline-flex;align-items:center;gap:10px">주요 트렌드 · 정당별 관심<span id="loadingTrend" class="cardLoading" style="display:none;"><span class="miniSpin"></span> 적용 중…</span></h3>
 
-            <!-- <div style="display:flex; gap:10px; align-items:center;">
-로딩 중…
-              </span>
-            </div> -->
           </div>
 
           <!-- ✅ 기간 중심 UI (대수는 고급옵션으로 내림) -->

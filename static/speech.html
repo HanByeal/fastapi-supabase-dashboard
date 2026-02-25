@@ -13,7 +13,13 @@
       color:#111;
       padding:18px;
     }
-    .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+    .topbar{
+      display:flex;
+      align-items:center;
+      justify-content:flex-end;
+      max-width:1280px;
+      margin:0 auto 14px;
+    }
     .navLeft{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
     .navBtn{
       text-decoration:none;color:#111;font-weight:900;font-size:13px;
@@ -281,11 +287,22 @@
   function escapeRegExp(s){
     return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
-  function highlightEscaped(escapedText, kw){
-    if(!kw) return escapedText;
-    const re = new RegExp(escapeRegExp(kw), "gi");
-    return escapedText.replace(re, (m)=>`<mark class="kwMark">${m}</mark>`);
-  }
+function highlightEscaped(escapedText, terms){
+  if(!terms || !terms.length) return escapedText;
+
+  // 긴 단어 먼저(부분 겹침 방지)
+  const sorted = [...terms].filter(Boolean).sort((a,b)=>b.length-a.length);
+  const pattern = sorted.map(t => {
+  const esc = escapeRegExp(t);
+  // 1) term에 공백이 있으면 공백을 \s*로
+  if (/\s/.test(t)) return esc.replace(/\s+/g, "\\s*");
+  // 2) term에 공백이 없으면 글자 사이마다 \s* 허용 (재외국민투표권 -> 재\s*외\s*국...)
+  return t.split("").map(ch => escapeRegExp(ch)).join("\\s*");}).join("|");
+  if(!pattern) return escapedText;
+
+  const re = new RegExp(pattern, "gi");
+  return escapedText.replace(re, (m)=>`<mark class="kwMark">${m}</mark>`);
+}
 
   // ====== API ======
 function sleep(ms){ return new Promise(res => setTimeout(res, ms)); }
@@ -381,10 +398,12 @@ async function apiSearch({kw, start, end, limit, offset, includeSeries, includeW
     $("cards").innerHTML = "";
   }
 
-  function appendCards(rows, kw){
+  function appendCards(rows, kw, terms){
     const wrap = $("cards");
     const list = Array.isArray(rows) ? rows.slice() : [];
     list.sort((a,b) => (b.date||"").localeCompare(a.date||""));
+
+    const useTerms = (terms && terms.length) ? terms : [kw];
 
     for(const r of list){
       const sessionNum = (r.session != null) ? String(r.session) :
@@ -400,8 +419,8 @@ async function apiSearch({kw, start, end, limit, offset, includeSeries, includeW
       const snippetText = r.snippet_text || fullText;
       const snippetTrunc = !!r.snippet_truncated;
 
-      const escSnippet = highlightEscaped(escapeHtml(snippetText), kw);
-      const escFull = highlightEscaped(escapeHtml(fullText), kw);
+      const escSnippet = highlightEscaped(escapeHtml(snippetText), useTerms);
+      const escFull = highlightEscaped(escapeHtml(fullText), useTerms);
 
       const card = document.createElement("div");
       card.className = "speechCard";
@@ -522,20 +541,29 @@ async function apiSearch({kw, start, end, limit, offset, includeSeries, includeW
     renderChart(p.series || [], state.start, state.end);
 
     renderCardsReset();
-    appendCards(p.speeches || [], state.kw);
+    const terms = (p && Array.isArray(p.highlight_terms) && p.highlight_terms.length)
+  ? p.highlight_terms
+  : [state.kw];
+
+    appendCards(p.speeches || [], state.kw, terms);
 
     $("noResult").style.display = (p.speeches && p.speeches.length) ? "none" : "block";
 
     renderWidgets(p.widgets || {});
 
     setLoadMore(false, state.hasMore);
+    console.log("highlight_terms:", p.highlight_terms);
   }
 
   function applyMorePayload(p){
     state.nextOffset = Number(p.next_offset || state.nextOffset);
     state.hasMore = !!p.has_more;
 
-    appendCards(p.speeches || [], state.kw);
+    const terms = (p && Array.isArray(p.highlight_terms) && p.highlight_terms.length)
+  ? p.highlight_terms
+  : [state.kw];
+
+    appendCards(p.speeches || [], state.kw, terms);
 
     setLoadMore(false, state.hasMore);
   }

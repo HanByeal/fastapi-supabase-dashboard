@@ -4,5 +4,3 @@ httpx
 python-dotenv
 pandas
 plotly
-kiwipiepy
-meilisearch

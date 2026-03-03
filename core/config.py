@@ -8,7 +8,6 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY") or ""
 
 TABLES = {
     "trend2": "trend2",  
-    "party_domain_metrics": "party_domain_metrics",
     "text_recap": "text_recap",
     "people_recap": "people_recap",
     "data_request_recap": "data_request_recap",
@@ -16,3 +15,4 @@ TABLES = {
     "question_stats_session_rows": "question_stats_session_rows",
     "law2": "law2",
 }
+

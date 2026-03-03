@@ -11,8 +11,8 @@ TABLES = {
     "text_recap": "text_recap",
     "people_recap": "people_recap",
     "data_request_recap": "data_request_recap",
-    "law_reform_stats_row": "law_reform_stats_row",
     "question_stats_session_rows": "question_stats_session_rows",
     "law2": "law2",
 }
+
 

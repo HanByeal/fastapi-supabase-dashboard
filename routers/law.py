@@ -4,18 +4,7 @@ from fastapi import APIRouter, Query
 from core.config import TABLES
 from core.supabase import sb_select
 
-
 router = APIRouter()
-
-@router.get("/api/law/stats/policy")
-async def api_law_stats_policy(limit: int = 5000, offset: int = 0):
-    params = {"select": "*", "limit": limit, "offset": offset}
-    return await sb_select(TABLES["law_reform_stats_row"], params)
-
-@router.get("/api/law/stats/session")
-async def api_law_stats_session(limit: int = 5000, offset: int = 0):
-    params = {"select": "*", "limit": limit, "offset": offset}
-    return await sb_select(TABLES["law_reform_stats_row"], params)
 
 @router.get("/api/law2/options")
 async def law2_options(
@@ -177,5 +166,6 @@ async def law2_stack_party(
             out[party]["num_scope_제도개선"] += cnt
         elif scope == "규정변경":
             out[party]["num_scope_규정변경"] += cnt
+
 
     return [out[k] for k in sorted(out.keys())]

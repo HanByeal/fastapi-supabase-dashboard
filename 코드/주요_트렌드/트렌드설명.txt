@@ -1,0 +1,8 @@
+해당폴더 산출문은 데이터수집/data/에서
+_outputs_trend 와 _outputs_party_interest 각각있습니다.
+
+_outputs_trend 에서는 agenda_labeled_v3을 DB에 사용, 주요 트렌드 시각화입니다.
+
+_outputs_party_interest  에서는 party_l3_quarter_with_l2을 DB에 사용, 정당별 관심 시각화입니다.
+
+다른 csv들은 실험csv들입니다.

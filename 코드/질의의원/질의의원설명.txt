@@ -1,0 +1,19 @@
+question_stats_session.py
+22대 질의요원 분석 이후 DB 자동업로드버전이었음.
+
+question_stats_session_csv.py
+20대, 21대 질의요원 데이터 csv로 
+
+question_stats_session__csv_new.py
+특정회차 질의요원분석(새로 생긴 430회 같은경우)
+
+### 참고사항 ###
+DATA_DIR = Path(r"C:\sw\분석과제\국회회의록\4인\data_collection\data")
+본인의 상황에 맞춰 파일 경로 수정 요망
+
+3가지 파일 모두 로직 동일
+키 설정 .env 파일
+22대 질의요원 분석후 DB업로드가 안될경우 supabase에 수동 적재
+
+특정회차는 다음과 같이 하드코딩 되어있어 수정필요
+ target_dir = DATA_DIR / "제430회"

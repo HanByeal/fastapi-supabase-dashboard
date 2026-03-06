@@ -1,0 +1,28 @@
+question_stats_session.py
+22대 질의요원 분석 이후 DB 자동업로드버전이었음.
+
+question_stats_session_csv.py
+20대, 21대 질의요원 데이터 csv로 
+
+question_stats_session__csv_new.py
+특정회차 질의요원분석(새로 생긴 430회 같은경우)
+
+### 참고사항 ###
+3가지 파일 모두 로직 동일
+
+DB자동업로드는 미사용 
+supabase에서 수동 적재
+
+question_stats_session__csv_new.py
+load_all_speeches() 에서  target_dir = DATA_DIR / "제430회" 지정의 형식으로 작동
+
+question_stats_session_csv.py
+22대와 로직이 동일하기에,
+    # [중요] 해당 대수(20대 또는 21대) 기간만 필터링
+    if term == "20대":
+        df = df[(df["date"] >= "2016-05-30") & (df["date"] <= "2020-05-29")]
+    elif term == "21대":
+        df = df[(df["date"] >= "2020-05-30") & (df["date"] <= "2024-05-29")]
+       
+해당 코드에서 22대 추가 하고 main() 함수에서
+for term in ["20대", "21대"]: 이부분 22대추가하면 정상작동할것으로 보임

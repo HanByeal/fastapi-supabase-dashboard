@@ -1,3 +1,7 @@
+같은 코드가 두번 반복됩니다.
+한셀에 모든 코드가 있는것 하나, 각각기능에 맞춰 나눠서 돌린 셀 여러개 있습니다.
+
+
 기본적으로 수집된 회의록 데이터의 모든 회차 폴더를 순회하여 데이터를 읽어옵니다.
 
 folders = [f for f in os.listdir(data_dir) if f.startswith("제") and f.endswith("회")]
